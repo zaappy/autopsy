@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from signalfx.collectors.base import CollectedData
+    from autopsy.collectors.base import CollectedData
 
 SYSTEM_PROMPT_V1 = """\
 You are an expert Site Reliability Engineer performing incident root cause \

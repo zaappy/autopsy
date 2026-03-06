@@ -1,3 +1,3 @@
-"""Tests for signalfx.diagnosis — orchestrator integration tests."""
+"""Tests for autopsy.diagnosis — orchestrator integration tests."""
 
 from __future__ import annotations

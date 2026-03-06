@@ -6,7 +6,7 @@ PyGitHub. Implements smart diff reduction to fit LLM context budgets.
 
 from __future__ import annotations
 
-from signalfx.collectors.base import BaseCollector, CollectedData
+from autopsy.collectors.base import BaseCollector, CollectedData
 
 
 class GitHubCollector(BaseCollector):
@@ -21,7 +21,7 @@ class GitHubCollector(BaseCollector):
         """Verify GitHub PAT and repository access.
 
         Args:
-            config: The 'github' section of SignalFXConfig.
+            config: The 'github' section of AutopsyConfig.
 
         Returns:
             True if authentication and repo access succeed.
@@ -43,7 +43,7 @@ class GitHubCollector(BaseCollector):
         - If commit touches >10 files, keep 10 largest + summary
 
         Args:
-            config: The 'github' section of SignalFXConfig.
+            config: The 'github' section of AutopsyConfig.
 
         Returns:
             Normalized CollectedData with deploy entries.

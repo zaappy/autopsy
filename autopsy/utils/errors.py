@@ -1,14 +1,14 @@
-"""Custom exception hierarchy for SignalFX.
+"""Custom exception hierarchy for Autopsy.
 
 Every user-facing error includes: what went wrong, why, and how to fix it.
-All exceptions inherit from SignalFXError.
+All exceptions inherit from AutopsyError.
 """
 
 from __future__ import annotations
 
 
-class SignalFXError(Exception):
-    """Base exception for all SignalFX errors."""
+class AutopsyError(Exception):
+    """Base exception for all Autopsy errors."""
 
     def __init__(
         self,
@@ -25,12 +25,12 @@ class SignalFXError(Exception):
 # --- Config errors ---
 
 
-class ConfigError(SignalFXError):
+class ConfigError(AutopsyError):
     """Base for configuration-related errors."""
 
 
 class ConfigNotFoundError(ConfigError):
-    """~/.signalfx/config.yaml is missing."""
+    """~/.autopsy/config.yaml is missing."""
 
 
 class ConfigValidationError(ConfigError):
@@ -40,7 +40,7 @@ class ConfigValidationError(ConfigError):
 # --- Collector errors ---
 
 
-class CollectorError(SignalFXError):
+class CollectorError(AutopsyError):
     """Base for data collector errors."""
 
 
@@ -67,7 +67,7 @@ class NoDataError(CollectorError):
 # --- AI errors ---
 
 
-class AIError(SignalFXError):
+class AIError(AutopsyError):
     """Base for AI provider errors."""
 
 
@@ -90,5 +90,5 @@ class AITimeoutError(AIError):
 # --- Render errors ---
 
 
-class RenderError(SignalFXError):
+class RenderError(AutopsyError):
     """Terminal or file rendering failure (typically non-fatal)."""

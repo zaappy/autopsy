@@ -15,13 +15,13 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from signalfx.utils.errors import SignalFXError
+from autopsy.utils.errors import AutopsyError
 
 console = Console(stderr=True)
 
 
-def _handle_error(err: SignalFXError) -> None:
-    """Render a SignalFXError in the red/yellow/green pattern and exit."""
+def _handle_error(err: AutopsyError) -> None:
+    """Render an AutopsyError in the red/yellow/green pattern and exit."""
     text = Text()
     text.append(f"❌ {err.message}\n", style="bold red")
     if err.hint:
@@ -34,27 +34,27 @@ def _handle_error(err: SignalFXError) -> None:
 
 @click.group()
 def cli() -> None:
-    """SignalFX — AI-powered incident diagnosis for engineering teams."""
+    """Autopsy — AI-powered incident diagnosis for engineering teams."""
 
 
 # ---------------------------------------------------------------------------
-# signalfx init
+# autopsy init
 # ---------------------------------------------------------------------------
 
 
 @cli.command()
 def init() -> None:
-    """Interactive configuration wizard. Creates ~/.signalfx/config.yaml."""
-    from signalfx.config import init_wizard
+    """Interactive configuration wizard. Creates ~/.autopsy/config.yaml."""
+    from autopsy.config import init_wizard
 
     try:
         init_wizard()
-    except SignalFXError as exc:
+    except AutopsyError as exc:
         _handle_error(exc)
 
 
 # ---------------------------------------------------------------------------
-# signalfx diagnose
+# autopsy diagnose
 # ---------------------------------------------------------------------------
 
 
@@ -81,7 +81,7 @@ def diagnose(
 
 
 # ---------------------------------------------------------------------------
-# signalfx config show / validate
+# autopsy config show / validate
 # ---------------------------------------------------------------------------
 
 
@@ -94,11 +94,11 @@ def config() -> None:
 @click.option("--reveal", is_flag=True, help="Show secret values unmasked.")
 def config_show(reveal: bool) -> None:
     """Print current config (secrets masked by default)."""
-    from signalfx.config import load_config, mask_secrets
+    from autopsy.config import load_config, mask_secrets
 
     try:
         cfg = load_config()
-    except SignalFXError as exc:
+    except AutopsyError as exc:
         _handle_error(exc)
 
     data = cfg.model_dump() if reveal else mask_secrets(cfg)
@@ -107,7 +107,7 @@ def config_show(reveal: bool) -> None:
     output.print(
         Panel(
             yaml.dump(data, default_flow_style=False, sort_keys=False).rstrip(),
-            title="~/.signalfx/config.yaml",
+            title="~/.autopsy/config.yaml",
             border_style="blue",
         )
     )
@@ -116,11 +116,11 @@ def config_show(reveal: bool) -> None:
 @config.command("validate")
 def config_validate() -> None:
     """Verify credentials and connectivity for all integrations."""
-    from signalfx.config import load_config, validate_config
+    from autopsy.config import load_config, validate_config
 
     try:
         cfg = load_config()
-    except SignalFXError as exc:
+    except AutopsyError as exc:
         _handle_error(exc)
 
     env_status = validate_config(cfg)
@@ -145,22 +145,22 @@ def config_validate() -> None:
     else:
         output.print(
             "\n[yellow]⚠ Set the missing env vars before "
-            "running 'signalfx diagnose'.[/yellow]"
+            "running 'autopsy diagnose'.[/yellow]"
         )
         sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
-# signalfx version
+# autopsy version
 # ---------------------------------------------------------------------------
 
 
 @cli.command()
 def version() -> None:
     """Print CLI version, prompt version, and Python version."""
-    from signalfx import PROMPT_VERSION, __version__
+    from autopsy import PROMPT_VERSION, __version__
 
     output = Console()
-    output.print(f"[bold]signalfx[/bold]  {__version__}")
+    output.print(f"[bold]autopsy[/bold]  {__version__}")
     output.print(f"[bold]prompt[/bold]    {PROMPT_VERSION}")
     output.print(f"[bold]python[/bold]    {sys.version.split()[0]}")

@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from signalfx.ai.models import DiagnosisResult
+    from autopsy.ai.models import DiagnosisResult
 
 
 class BaseRenderer(ABC):

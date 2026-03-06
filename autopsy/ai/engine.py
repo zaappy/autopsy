@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from signalfx.ai.models import DiagnosisResult
-    from signalfx.collectors.base import CollectedData
+    from autopsy.ai.models import DiagnosisResult
+    from autopsy.collectors.base import CollectedData
 
 
 class AIEngine:

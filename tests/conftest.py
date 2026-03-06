@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for SignalFX tests."""
+"""Shared pytest fixtures for Autopsy tests."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from signalfx.ai.models import (
+from autopsy.ai.models import (
     CorrelatedDeploy,
     DiagnosisResult,
     RootCause,
     SuggestedFix,
     TimelineEvent,
 )
-from signalfx.collectors.base import CollectedData
+from autopsy.collectors.base import CollectedData
 
 
 @pytest.fixture()

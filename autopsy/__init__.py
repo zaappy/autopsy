@@ -1,4 +1,4 @@
-"""SignalFX — AI-powered incident diagnosis CLI."""
+"""Autopsy — AI-powered incident diagnosis CLI."""
 
 from __future__ import annotations
 

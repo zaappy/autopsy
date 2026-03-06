@@ -1,7 +1,7 @@
 """Config loader, validator, and interactive init wizard.
 
 Handles reading, writing, and validating the user configuration
-stored at ~/.signalfx/config.yaml. The init wizard guides first-time
+stored at ~/.autopsy/config.yaml. The init wizard guides first-time
 setup interactively using Rich prompts.
 """
 
@@ -18,9 +18,9 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.text import Text
 
-from signalfx.utils.errors import ConfigNotFoundError, ConfigValidationError
+from autopsy.utils.errors import ConfigNotFoundError, ConfigValidationError
 
-CONFIG_DIR = Path.home() / ".signalfx"
+CONFIG_DIR = Path.home() / ".autopsy"
 CONFIG_PATH = CONFIG_DIR / "config.yaml"
 
 _AWS_REGION_RE = re.compile(r"^[a-z]{2}(-[a-z]+-\d+)$")
@@ -94,8 +94,8 @@ class OutputConfig(BaseModel):
     verbosity: str = Field(default="normal", pattern=r"^(quiet|normal|verbose)$")
 
 
-class SignalFXConfig(BaseModel):
-    """Top-level configuration model for ~/.signalfx/config.yaml."""
+class AutopsyConfig(BaseModel):
+    """Top-level configuration model for ~/.autopsy/config.yaml."""
 
     version: int = 1
     aws: AWSConfig
@@ -104,7 +104,7 @@ class SignalFXConfig(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
 
     @model_validator(mode="after")
-    def _validate_env_var_names(self) -> SignalFXConfig:
+    def _validate_env_var_names(self) -> AutopsyConfig:
         """Ensure env var field names are non-empty strings."""
         if not self.github.token_env:
             msg = "github.token_env must be a non-empty env var name"
@@ -120,14 +120,14 @@ class SignalFXConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def load_config(path: Path | None = None) -> SignalFXConfig:
-    """Read ~/.signalfx/config.yaml and return a validated SignalFXConfig.
+def load_config(path: Path | None = None) -> AutopsyConfig:
+    """Read ~/.autopsy/config.yaml and return a validated AutopsyConfig.
 
     Args:
         path: Path to the YAML config file. Defaults to CONFIG_PATH.
 
     Returns:
-        Validated SignalFXConfig instance.
+        Validated AutopsyConfig instance.
 
     Raises:
         ConfigNotFoundError: If the config file does not exist.
@@ -138,7 +138,7 @@ def load_config(path: Path | None = None) -> SignalFXConfig:
     if not path.exists():
         raise ConfigNotFoundError(
             message=f"Config file not found: {path}",
-            hint="Run 'signalfx init' to create a config file.",
+            hint="Run 'autopsy init' to create a config file.",
         )
 
     raw = path.read_text(encoding="utf-8")
@@ -153,22 +153,22 @@ def load_config(path: Path | None = None) -> SignalFXConfig:
     if not isinstance(data, dict):
         raise ConfigValidationError(
             message="Config file must contain a YAML mapping at the top level.",
-            hint="Run 'signalfx init' to regenerate a valid config.",
+            hint="Run 'autopsy init' to regenerate a valid config.",
         )
 
     try:
-        return SignalFXConfig(**data)
+        return AutopsyConfig(**data)
     except ValidationError as exc:
         errors = "; ".join(
             f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
         )
         raise ConfigValidationError(
             message=f"Config validation failed: {errors}",
-            hint="Fix the values in your config file or re-run 'signalfx init'.",
+            hint="Fix the values in your config file or re-run 'autopsy init'.",
         ) from exc
 
 
-def validate_config(config: SignalFXConfig) -> dict[str, bool]:
+def validate_config(config: AutopsyConfig) -> dict[str, bool]:
     """Check that referenced env vars exist (not their values, just existence).
 
     Args:
@@ -184,8 +184,8 @@ def validate_config(config: SignalFXConfig) -> dict[str, bool]:
     return env_vars
 
 
-def save_config(config: SignalFXConfig, path: Path | None = None) -> Path:
-    """Serialize a SignalFXConfig to YAML and write to disk.
+def save_config(config: AutopsyConfig, path: Path | None = None) -> Path:
+    """Serialize an AutopsyConfig to YAML and write to disk.
 
     Args:
         config: Validated config to write.
@@ -202,7 +202,7 @@ def save_config(config: SignalFXConfig, path: Path | None = None) -> Path:
     return path
 
 
-def mask_secrets(config: SignalFXConfig) -> dict:
+def mask_secrets(config: AutopsyConfig) -> dict:
     """Return config dict with secret env var values masked.
 
     The env var *names* are shown; actual runtime values are replaced
@@ -226,7 +226,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
     """Interactive setup wizard using Rich prompts.
 
     Guides the user through first-time configuration and writes
-    ~/.signalfx/config.yaml with sensible defaults.
+    ~/.autopsy/config.yaml with sensible defaults.
 
     Args:
         config_path: Where to write the resulting config.
@@ -242,9 +242,9 @@ def init_wizard(config_path: Path | None = None) -> Path:
 
     console.print(
         Panel(
-            "[bold]Welcome to SignalFX[/bold]\n"
+            "[bold]Welcome to Autopsy[/bold]\n"
             "This wizard will create your configuration file.",
-            title="signalfx init",
+            title="autopsy init",
             border_style="blue",
         )
     )
@@ -281,7 +281,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
     api_key_env = Prompt.ask("Env var for API key", default=default_key_env)
 
     try:
-        config = SignalFXConfig(
+        config = AutopsyConfig(
             aws=AWSConfig(
                 region=region,
                 log_groups=log_groups,
@@ -306,7 +306,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
         )
         raise ConfigValidationError(
             message=f"Invalid configuration: {errors}",
-            hint="Re-run 'signalfx init' and double-check your inputs.",
+            hint="Re-run 'autopsy init' and double-check your inputs.",
         ) from exc
 
     written = save_config(config, config_path)
@@ -322,7 +322,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
         warn.append("\n⚠ Missing env vars: ", style="yellow")
         warn.append(", ".join(missing), style="bold yellow")
         warn.append(
-            "\n  Set them before running 'signalfx diagnose'.",
+            "\n  Set them before running 'autopsy diagnose'.",
             style="yellow",
         )
         console.print(warn)
@@ -335,7 +335,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _render_config_summary(config: SignalFXConfig) -> None:
+def _render_config_summary(config: AutopsyConfig) -> None:
     """Print a Rich summary of the config (for init wizard confirmation)."""
     lines = [
         f"[bold]AWS[/bold]  region={config.aws.region}  "

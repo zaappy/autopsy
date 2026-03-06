@@ -7,7 +7,7 @@ truncation, and token budgeting.
 
 from __future__ import annotations
 
-from signalfx.collectors.base import BaseCollector, CollectedData
+from autopsy.collectors.base import BaseCollector, CollectedData
 
 
 class CloudWatchCollector(BaseCollector):
@@ -22,7 +22,7 @@ class CloudWatchCollector(BaseCollector):
         """Verify AWS credentials and CloudWatch permissions.
 
         Args:
-            config: The 'aws' section of SignalFXConfig.
+            config: The 'aws' section of AutopsyConfig.
 
         Returns:
             True if credentials and permissions are valid.
@@ -43,7 +43,7 @@ class CloudWatchCollector(BaseCollector):
         4. Token budget hard cap at 6000 tokens (FIFO eviction)
 
         Args:
-            config: The 'aws' section of SignalFXConfig.
+            config: The 'aws' section of AutopsyConfig.
 
         Returns:
             Normalized CollectedData with deduplicated log entries.

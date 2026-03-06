@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from signalfx.renderers.terminal import BaseRenderer
+from autopsy.renderers.terminal import BaseRenderer
 
 if TYPE_CHECKING:
-    from signalfx.ai.models import DiagnosisResult
+    from autopsy.ai.models import DiagnosisResult
 
 
 class JSONRenderer(BaseRenderer):
