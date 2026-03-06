@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["signalfx"]
+
+[project]
+name = "signalfx-cli"
+version = "0.1.0"
+description = "AI-powered incident diagnosis CLI. Diagnose production incidents in 30 seconds."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Zeel", email = "zeel@signalfx.dev" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "click>=8.0",
+    "boto3>=1.28",
+    "PyGitHub>=2.0",
+    "rich>=13.0",
+    "anthropic>=0.30",
+    "openai>=1.30",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-vcr>=1.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+signalfx = "signalfx.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/zeel/signalfx-cli"
+Documentation = "https://github.com/zeel/signalfx-cli#readme"
+Repository = "https://github.com/zeel/signalfx-cli"
+Issues = "https://github.com/zeel/signalfx-cli/issues"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "TCH"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
