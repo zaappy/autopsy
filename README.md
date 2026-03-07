@@ -1,20 +1,95 @@
 # Autopsy CLI
 
-AI-powered incident diagnosis for engineering teams. Diagnose production incidents in 30 seconds.
+[![CI](https://github.com/zaappy/autopsy/actions/workflows/ci.yml/badge.svg)](https://github.com/zaappy/autopsy/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/autopsy-cli.svg)](https://pypi.org/project/autopsy-cli/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**AI-powered incident diagnosis for engineering teams.** Pull production error logs and recent deploys, send them to an LLM, and get a structured root cause analysis in the terminal in under a minute. Zero-trust: your data never leaves your environment.
+
+<!-- TODO: Add demo GIF when available -->
+<!-- ![Demo](docs/demo.gif) -->
 
 ## Install
 
 ```bash
-pip install -e .
+pip install autopsy-cli
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/zaappy/autopsy.git && cd autopsy
+pip install -e ".[dev]"
 ```
 
 ## Quick Start
 
 ```bash
-autopsy init
-autopsy diagnose
+autopsy init      # Interactive config wizard (~/.autopsy/config.yaml)
+autopsy diagnose  # Run diagnosis (CloudWatch + GitHub → AI → panels)
 ```
+
+Three steps: **install → init → diagnose.**
+
+## Configuration
+
+After `autopsy init`, edit `~/.autopsy/config.yaml` or re-run the wizard. You need:
+
+| Section   | Purpose |
+|----------|---------|
+| **aws**  | CloudWatch region, log groups, time window (minutes). Uses your AWS CLI credentials. |
+| **github** | Repo (`owner/repo`), branch, number of recent commits to analyze. Uses `GITHUB_TOKEN`. |
+| **ai**   | Provider (`anthropic` or `openai`), model, API key env var. |
+
+Set the env vars referenced in config (e.g. `GITHUB_TOKEN`, `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) before running `autopsy diagnose`.
+
+```bash
+autopsy config show       # Print config (secrets masked)
+autopsy config validate   # Check env vars and connectivity
+```
+
+## How It Works
+
+```
+┌─────────────┐     ┌──────────────────┐     ┌─────────────┐     ┌──────────────┐
+│   Config    │────▶│  Data Collectors │────▶│  AI Engine  │────▶│  Renderers   │
+│ ~/.autopsy  │     │  CloudWatch      │     │  (Claude /   │     │  Terminal or │
+│ config.yaml │     │  GitHub          │     │   OpenAI)    │     │  JSON        │
+└─────────────┘     └──────────────────┘     └─────────────┘     └──────────────┘
+                           │                          │
+                           ▼                          ▼
+                    Logs + recent commits      Structured diagnosis:
+                    (deduped, truncated)       root cause, deploy, fix, timeline
+```
+
+1. **Collect** — CloudWatch Logs Insights (error-level) and GitHub (last N commits + diffs).
+2. **Reduce** — Log dedup and token budget; diff filters (code files only, cap per file).
+3. **Diagnose** — Single prompt with logs + deploys; LLM returns JSON (root cause, correlated deploy, suggested fix, timeline).
+4. **Render** — Rich panels in the terminal or `--json` for piping.
+
+## CLI Reference
+
+| Command | Description |
+|--------|-------------|
+| `autopsy init` | Interactive config wizard |
+| `autopsy diagnose` | Run full diagnosis pipeline |
+| `autopsy diagnose --json` | Output raw JSON |
+| `autopsy diagnose --time-window 15` | Override log window (minutes) |
+| `autopsy diagnose --log-group /aws/lambda/foo` | Override log groups (repeatable) |
+| `autopsy diagnose --provider openai` | Use OpenAI instead of Anthropic |
+| `autopsy config show` | Print config |
+| `autopsy config validate` | Check credentials |
+| `autopsy version` / `autopsy --version` | CLI version, prompt version, Python version |
+
+## Contributing
+
+1. Fork the repo and create a branch.
+2. Install dev deps: `pip install -e ".[dev]"`.
+3. Run lint and tests: `ruff check . && pytest`.
+4. Open a PR against `main`.
+
+We follow the layout and conventions in the repo (collectors, AI engine, renderers, no business logic in `cli.py`).
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
