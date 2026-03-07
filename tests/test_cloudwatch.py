@@ -4,23 +4,22 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 import botocore.exceptions
+import pytest
 
+from autopsy.collectors.base import CollectedData
 from autopsy.collectors.cloudwatch import (
     CloudWatchCollector,
     _extract_template,
     _result_row_to_entry,
     _truncate_message,
 )
-from autopsy.collectors.base import CollectedData
 from autopsy.utils.errors import (
     AWSAuthError,
     AWSPermissionError,
     CollectorError,
     NoDataError,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,7 +45,9 @@ def _aws_config(
     return out
 
 
-def _insights_row(timestamp: str = "2026-03-06T10:00:00.000Z", message: str = "ERROR") -> list[dict]:
+def _insights_row(
+    timestamp: str = "2026-03-06T10:00:00.000Z", message: str = "ERROR"
+) -> list[dict]:
     """One Logs Insights result row (list of field/value dicts)."""
     return [
         {"field": "@timestamp", "value": timestamp},
@@ -335,7 +336,8 @@ class TestAuthFailure:
             collector.validate_config(_aws_config())
 
         assert "credentials not found" in exc_info.value.message.lower()
-        assert "aws configure" in exc_info.value.hint.lower() or "AWS_PROFILE" in exc_info.value.hint
+        hint = exc_info.value.hint
+        assert "aws configure" in hint.lower() or "AWS_PROFILE" in hint
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +398,8 @@ class TestExpiredCreds:
             collector.validate_config(_aws_config())
 
         assert "expired" in exc_info.value.message.lower()
-        assert "sso login" in exc_info.value.hint.lower() or "session token" in exc_info.value.hint.lower()
+        hint = exc_info.value.hint
+        assert "sso login" in hint.lower() or "session token" in hint.lower()
 
 
 # ---------------------------------------------------------------------------

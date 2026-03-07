@@ -146,6 +146,8 @@ class TestOrchestratorRun:
 
         mock_engine_cls.return_value.diagnose.return_value = _sample_result()
 
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")  # provider=openai requires this
+
         config = _minimal_config()
         orch = DiagnosisOrchestrator(config)
         orch.run(time_window=15, log_groups=["/custom/group"], provider="openai")

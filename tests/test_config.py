@@ -255,7 +255,7 @@ class TestCLI:
         from autopsy.cli import cli
 
         monkeypatch.setattr(config_mod, "CONFIG_PATH", tmp_path / "nope.yaml")
-        runner = CliRunner(mix_stderr=False)
+        runner = CliRunner()
         result = runner.invoke(cli, ["config", "show"])
         assert result.exit_code != 0
 
@@ -284,7 +284,7 @@ class TestCLI:
         monkeypatch.setattr(config_mod, "CONFIG_PATH", path)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        runner = CliRunner(mix_stderr=False)
+        runner = CliRunner()
         result = runner.invoke(cli, ["config", "validate"])
         assert result.exit_code != 0
         assert "Missing" in result.output
