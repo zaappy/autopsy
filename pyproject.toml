@@ -8,7 +8,7 @@ packages = ["autopsy"]
 [project]
 name = "autopsy-cli"
 version = "0.1.0"
-description = "AI-powered incident diagnosis CLI. Diagnose production incidents in 30 seconds."
+description = "AI-powered incident diagnosis for engineering teams. Pull logs and deploys, get a structured root cause in 30 seconds."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -21,6 +21,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -28,6 +29,7 @@ classifiers = [
     "Topic :: System :: Monitoring",
     "Topic :: Software Development :: Quality Assurance",
 ]
+keywords = ["incident", "diagnosis", "root-cause", "cloudwatch", "github", "ai", "llm"]
 dependencies = [
     "click>=8.0",
     "boto3>=1.28",

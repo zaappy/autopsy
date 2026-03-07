@@ -361,6 +361,6 @@ def _find_pr_for_commit(commit) -> dict | None:
                 "body": body,
                 "merged_at": pr.merged_at.isoformat() if pr.merged_at else None,
             }
-    except (GithubException, Exception):
+    except GithubException:
         return None
     return None
