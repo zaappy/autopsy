@@ -25,11 +25,20 @@ pip install -e ".[dev]"
 ## Quick Start
 
 ```bash
-autopsy init      # Interactive config wizard (~/.autopsy/config.yaml)
-autopsy diagnose  # Run diagnosis (CloudWatch + GitHub → AI → panels)
+autopsy           # Launch interactive TUI (menu, then run Diagnose or Setup)
+autopsy init      # Or: interactive config wizard (~/.autopsy/config.yaml)
+autopsy diagnose  # Or: run diagnosis directly (CloudWatch + GitHub → AI → panels)
 ```
 
-Three steps: **install → init → diagnose.**
+**Interactive TUI** — Run `autopsy` with no arguments to open the interactive terminal UI:
+
+- **AUTOPSY** logo and tagline (*AI-powered incident diagnosis • zero-trust*)
+- Arrow-key menu: **Diagnose**, **Setup configuration**, **Validate connections**, **Show config**, **Diagnosis history** (cloud, disabled)
+- Shortcuts: `d` Diagnose, `i` Init, `v` Validate, `c` Config, `q` Quit, `Esc` Back
+- Choosing **Diagnose** runs the full pipeline inside the TUI (progress steps, then 4-panel result). Errors are shown inline; press `Esc` to return to the menu.
+- Choosing **Setup** / **Validate** / **Show config** exits the TUI and runs the corresponding CLI command in your terminal.
+
+Three steps: **install → init → diagnose** (via TUI or direct commands).
 
 ## Configuration
 
@@ -71,15 +80,18 @@ autopsy config validate   # Check env vars and connectivity
 
 | Command | Description |
 |--------|-------------|
+| `autopsy` | **Interactive TUI** — menu with Diagnose, Setup, Validate, Config (requires `textual`) |
 | `autopsy init` | Interactive config wizard |
-| `autopsy diagnose` | Run full diagnosis pipeline |
+| `autopsy diagnose` | Run full diagnosis pipeline (same as TUI “Diagnose”) |
 | `autopsy diagnose --json` | Output raw JSON |
 | `autopsy diagnose --time-window 15` | Override log window (minutes) |
 | `autopsy diagnose --log-group /aws/lambda/foo` | Override log groups (repeatable) |
 | `autopsy diagnose --provider openai` | Use OpenAI instead of Anthropic |
-| `autopsy config show` | Print config |
-| `autopsy config validate` | Check credentials |
+| `autopsy config show` | Print config (secrets masked) |
+| `autopsy config validate` | Check credentials and connectivity |
 | `autopsy version` / `autopsy --version` | CLI version, prompt version, Python version |
+
+If `textual` is not installed, `autopsy` with no arguments prints help instead of starting the TUI.
 
 ## Contributing
 
