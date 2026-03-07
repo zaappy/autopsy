@@ -137,9 +137,7 @@ class TestCollectHappyPath:
     """Collect returns valid CollectedData with mocked boto3."""
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_collected_data_shape(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_collected_data_shape(self, mock_session: MagicMock) -> None:
         client = _mock_logs_client(
             get_results_rows=[
                 _insights_row(message="ERROR: NullPointerException"),
@@ -172,9 +170,7 @@ class TestDedupPipeline:
     """Stage 2: duplicate messages merged with occurrences count."""
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_duplicates_merged_with_occurrences(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_duplicates_merged_with_occurrences(self, mock_session: MagicMock) -> None:
         # 20 rows: 5 distinct message structures, 4 copies each (same template, different values)
         templates = [
             "ERROR: request 10000 failed at 2026-03-06T10:00:00Z",
@@ -221,13 +217,13 @@ class TestTruncation:
     def test_stack_trace_trimmed(self) -> None:
         lines = [
             "Traceback (most recent call last):",
-            "  File \"/app/handler.py\", line 42, in run",
+            '  File "/app/handler.py", line 42, in run',
             "    raise ValueError('bad')",
-            "  File \"/app/lib.py\", line 1, in helper",
-            "  File \"/app/lib.py\", line 2, in helper",
-            "  File \"/app/lib.py\", line 3, in helper",
-            "  File \"/app/lib.py\", line 4, in helper",
-            "  File \"/app/lib.py\", line 5, in helper",
+            '  File "/app/lib.py", line 1, in helper',
+            '  File "/app/lib.py", line 2, in helper',
+            '  File "/app/lib.py", line 3, in helper',
+            '  File "/app/lib.py", line 4, in helper',
+            '  File "/app/lib.py", line 5, in helper',
         ]
         msg = "\n".join(lines)
         out = _truncate_message(msg)
@@ -237,9 +233,7 @@ class TestTruncation:
         assert "Traceback" in out or "ValueError" in out
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_collect_truncates_long_messages(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_collect_truncates_long_messages(self, mock_session: MagicMock) -> None:
         client = _mock_logs_client(
             get_results_rows=[
                 _insights_row(message="A" * 1200),
@@ -263,9 +257,7 @@ class TestTokenBudget:
     """Stage 4: hard cap at 6000 tokens; truncated=True when eviction occurs."""
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_over_budget_sets_truncated(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_over_budget_sets_truncated(self, mock_session: MagicMock) -> None:
         # 100 unique templates (different "type XX") so no dedup; ~300 chars each ≈ 7500 tokens
         rows = [
             _insights_row(
@@ -280,8 +272,7 @@ class TestTokenBudget:
         result = collector.collect(_aws_config())
 
         total_chars = sum(
-            len(e.get("@message", "")) + len(e.get("@timestamp", ""))
-            for e in result.entries
+            len(e.get("@message", "")) + len(e.get("@timestamp", "")) for e in result.entries
         )
         estimated_tokens = total_chars // 4
         assert estimated_tokens <= 6500  # allow some slack for our estimate
@@ -298,9 +289,7 @@ class TestEmptyResults:
     """NoDataError when query returns zero results."""
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_zero_results_raises_no_data_error(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_zero_results_raises_no_data_error(self, mock_session: MagicMock) -> None:
         client = _mock_logs_client(get_results_rows=[])
         mock_session.return_value.client.return_value = client
 
@@ -323,12 +312,8 @@ class TestAuthFailure:
     """NoCredentialsError → AWSAuthError with correct hint."""
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_no_credentials_raises_auth_error(
-        self, mock_session: MagicMock
-    ) -> None:
-        mock_session.return_value.client.side_effect = (
-            botocore.exceptions.NoCredentialsError()
-        )
+    def test_no_credentials_raises_auth_error(self, mock_session: MagicMock) -> None:
+        mock_session.return_value.client.side_effect = botocore.exceptions.NoCredentialsError()
 
         collector = CloudWatchCollector()
 
@@ -349,15 +334,11 @@ class TestPermissionFailure:
     """ClientError AccessDenied → AWSPermissionError."""
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_access_denied_raises_permission_error(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_access_denied_raises_permission_error(self, mock_session: MagicMock) -> None:
         client = MagicMock()
-        client.get_paginator.return_value.paginate.side_effect = (
-            botocore.exceptions.ClientError(
-                {"Error": {"Code": "AccessDeniedException", "Message": "Access Denied"}},
-                "DescribeLogGroups",
-            )
+        client.get_paginator.return_value.paginate.side_effect = botocore.exceptions.ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "Access Denied"}},
+            "DescribeLogGroups",
         )
         mock_session.return_value.client.return_value = client
 
@@ -380,15 +361,11 @@ class TestExpiredCreds:
     """ClientError ExpiredToken → AWSAuthError."""
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_expired_token_raises_auth_error(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_expired_token_raises_auth_error(self, mock_session: MagicMock) -> None:
         client = MagicMock()
-        client.get_paginator.return_value.paginate.side_effect = (
-            botocore.exceptions.ClientError(
-                {"Error": {"Code": "ExpiredToken", "Message": "Token expired"}},
-                "DescribeLogGroups",
-            )
+        client.get_paginator.return_value.paginate.side_effect = botocore.exceptions.ClientError(
+            {"Error": {"Code": "ExpiredToken", "Message": "Token expired"}},
+            "DescribeLogGroups",
         )
         mock_session.return_value.client.return_value = client
 
@@ -461,9 +438,7 @@ class TestValidateConfig:
     """validate_config with mocked boto3."""
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_success_returns_true(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_success_returns_true(self, mock_session: MagicMock) -> None:
         client = _mock_logs_client()
         mock_session.return_value.client.return_value = client
 
@@ -471,15 +446,15 @@ class TestValidateConfig:
         assert collector.validate_config(_aws_config()) is True
 
     @patch("autopsy.collectors.cloudwatch.boto3.Session")
-    def test_log_group_not_found_raises(
-        self, mock_session: MagicMock
-    ) -> None:
+    def test_log_group_not_found_raises(self, mock_session: MagicMock) -> None:
         # Paginator returns no matching log group name
         client = MagicMock()
         paginator = MagicMock()
-        paginator.paginate.return_value = iter([
-            {"logGroups": [{"logGroupName": "/other/group"}]},
-        ])
+        paginator.paginate.return_value = iter(
+            [
+                {"logGroups": [{"logGroupName": "/other/group"}]},
+            ]
+        )
         client.get_paginator.return_value = paginator
         mock_session.return_value.client.return_value = client
 

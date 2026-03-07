@@ -230,10 +230,7 @@ class TestBuildEntry:
         assert entry["relevant_files_count"] == 1
 
     def test_many_files_capped_at_10(self) -> None:
-        files = [
-            _mock_file(filename=f"src/mod{i}.py", changes=i)
-            for i in range(15)
-        ]
+        files = [_mock_file(filename=f"src/mod{i}.py", changes=i) for i in range(15)]
         commit = _mock_commit(files=files)
         entry = _build_entry(commit)
         assert len(entry["files"]) == 10
@@ -241,10 +238,7 @@ class TestBuildEntry:
         assert "5 more files omitted" in entry["files_summary"]
 
     def test_large_files_sorted_first(self) -> None:
-        files = [
-            _mock_file(filename=f"src/mod{i}.py", changes=i)
-            for i in range(15)
-        ]
+        files = [_mock_file(filename=f"src/mod{i}.py", changes=i) for i in range(15)]
         commit = _mock_commit(files=files)
         entry = _build_entry(commit)
         changes = [d["additions"] + d["deletions"] for d in entry["file_diffs"]]
@@ -359,9 +353,7 @@ class TestValidateConfig:
     ) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_ok")
         mock_gh = MagicMock()
-        exc = RateLimitExceededException(
-            403, {"message": "rate limit"}, {"Retry-After": "60"}
-        )
+        exc = RateLimitExceededException(403, {"message": "rate limit"}, {"Retry-After": "60"})
         mock_gh.get_repo.side_effect = exc
         mock_gh_cls.return_value = mock_gh
 
@@ -379,9 +371,7 @@ class TestCollect:
     """Full collect() with mocked PyGitHub."""
 
     @patch("autopsy.collectors.github.Github")
-    def test_happy_path(
-        self, mock_gh_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_happy_path(self, mock_gh_cls: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
         commits = [_mock_commit(sha=f"sha{i}") for i in range(3)]
 
@@ -424,9 +414,7 @@ class TestCollect:
     ) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
         mock_repo = MagicMock()
-        exc = RateLimitExceededException(
-            403, {"message": "rate limit"}, {"Retry-After": "60"}
-        )
+        exc = RateLimitExceededException(403, {"message": "rate limit"}, {"Retry-After": "60"})
         mock_repo.get_commits.side_effect = exc
         mock_gh = MagicMock()
         mock_gh.get_repo.return_value = mock_repo

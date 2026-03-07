@@ -12,13 +12,12 @@ from pydantic import ValidationError
 from autopsy.config import (
     AIConfig,
     AutopsyConfig,
-    ENV_FILE,
+    _write_env_file,
     load_config,
     load_env,
     save_config,
     validate_config,
 )
-from autopsy.config import _write_env_file
 from autopsy.utils.errors import ConfigNotFoundError, ConfigValidationError
 
 if TYPE_CHECKING:
@@ -408,9 +407,7 @@ class TestCLI:
         assert result.exit_code != 0
         assert "Missing" in result.output
 
-    def test_config_validate_all_set(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_config_validate_all_set(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from click.testing import CliRunner
 
         from autopsy import config as config_mod

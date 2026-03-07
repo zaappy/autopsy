@@ -52,7 +52,7 @@ After `autopsy init`, edit `~/.autopsy/config.yaml` or re-run the wizard. The in
 
 Credentials are loaded from `~/.autopsy/.env` automatically. If you prefer env vars, export them in your shell — they take precedence over the `.env` file.
 
-**Security:** Add `~/.autopsy/.env` to `.gitignore` if you ever copy the config directory. Never commit credentials.
+**Security:** Add `~/.autopsy/.env` to `.gitignore` if you ever copy the config directory. Never commit credentials. If your home directory is backed up or synced (e.g. OneDrive, Time Machine, Google Drive), the `.env` file may be included — consider excluding `~/.autopsy/` from sync or use env vars instead.
 
 ```bash
 autopsy config show       # Print config (secrets masked)
