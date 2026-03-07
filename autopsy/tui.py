@@ -142,27 +142,39 @@ def _import_app() -> type:
 
         CSS = """
         Screen {
-            background: #0a0e14;
+            background: #0d1117;
+            align: center middle;
+        }
+        #welcome {
+            width: 72;
+            height: auto;
+            padding: 2 2;
+            align: center middle;
         }
         #logo {
             text-align: center;
-            margin: 2 0 1 0;
+            margin: 0 0 1 0;
         }
         #tagline {
             text-align: center;
-            color: #546178;
-            margin: 0 0 1 0;
+            color: #8b949e;
+            margin: 0 0 2 0;
         }
         #main-content {
-            margin: 1 4;
-            width: auto;
+            width: 100%;
             height: auto;
+            padding: 0 2;
         }
         #menu {
             background: transparent;
+            padding: 0 2;
+            min-height: 12;
+        }
+        #menu .option-list--option {
+            padding: 0 1;
         }
         OptionList > .option-list--option-highlighted {
-            background: #FF080015;
+            background: #FF080012;
             border-left: solid #FF0800;
         }
         #progress-view, #result-view, #error-view {
@@ -175,19 +187,25 @@ def _import_app() -> type:
             max-height: 60;
         }
         .back-hint {
-            color: #546178;
+            color: #8b949e;
             margin-top: 1;
+        }
+        Footer {
+            dock: bottom;
+            padding: 0 1;
+            color: #8b949e;
         }
         """
 
         BINDINGS = [
-            Binding("q", "quit", "Quit"),
-            Binding("d", "diagnose", "Diagnose"),
-            Binding("i", "init", "Init"),
-            Binding("v", "validate", "Validate"),
-            Binding("c", "config", "Config"),
-            Binding("escape", "back", "Back"),
+            Binding("q", "quit", "Quit", show=True),
+            Binding("d", "diagnose", "Diagnose", show=False),
+            Binding("i", "init", "Init", show=False),
+            Binding("v", "validate", "Validate", show=False),
+            Binding("c", "config", "Config", show=False),
+            Binding("escape", "back", "Back", show=True),
         ]
+        TITLE = "Autopsy"
 
         def __init__(self) -> None:
             super().__init__()
@@ -195,32 +213,33 @@ def _import_app() -> type:
             self._menu_instance: OptionList | None = None
 
         def compose(self) -> ComposeResult:
-            yield Static(render_logo(), id="logo")
-            yield Static(_make_tagline(), id="tagline")
-            with Container(id="main-content"):
-                yield self._compose_menu()
+            with Container(id="welcome"):
+                yield Static(render_logo(), id="logo")
+                yield Static(_make_tagline(), id="tagline")
+                with Container(id="main-content"):
+                    yield self._compose_menu()
             yield Footer()
 
         def _compose_menu(self) -> OptionList:
             self._menu_instance = OptionList(
                 Option(
-                    "🔍  [bold]Diagnose incident[/bold]     — Pull logs + deploys → AI root cause  [dim](d)[/dim]",
+                    "[bold]Diagnose[/bold]  — Pull logs + deploys → AI root cause  [dim]d[/dim]",
                     id="diagnose",
                 ),
                 Option(
-                    "⚙️  [bold]Setup configuration[/bold]   — Interactive wizard for AWS, GitHub, AI  [dim](i)[/dim]",
+                    "[bold]Setup[/bold]  — Interactive wizard (AWS, GitHub, AI)  [dim]i[/dim]",
                     id="init",
                 ),
                 Option(
-                    "✓   [bold]Validate connections[/bold]  — Test credentials and connectivity  [dim](v)[/dim]",
+                    "[bold]Validate[/bold]  — Test credentials and connectivity  [dim]v[/dim]",
                     id="validate",
                 ),
                 Option(
-                    "📋  [bold]Show config[/bold]           — Display current config (secrets masked)  [dim](c)[/dim]",
+                    "[bold]Show config[/bold]  — Current config (secrets masked)  [dim]c[/dim]",
                     id="config",
                 ),
                 Option(
-                    "📜  [bold]Diagnosis history[/bold]     — Past diagnoses  [dim]cloud[/dim]",
+                    "[bold]History[/bold]  [dim]cloud[/dim]",
                     id="history",
                     disabled=True,
                 ),
