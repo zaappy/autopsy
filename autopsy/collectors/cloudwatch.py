@@ -3,37 +3,129 @@
 Pulls error-level logs using the engineer's local AWS credentials.
 Implements a multi-stage reduction pipeline: query filter, deduplication,
 truncation, and token budgeting.
+
+Stage 1 (query-level filter): Handled by the Logs Insights query regex
+filtering for error|exception|fatal|panic|timeout|5xx — no code needed here.
 """
 
 from __future__ import annotations
 
-import hashlib
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 
 import boto3
-from botocore.exceptions import BotoCoreError, ClientError
+import botocore.exceptions
 from rich.console import Console
 
 from autopsy.collectors.base import BaseCollector, CollectedData
-from autopsy.utils.errors import AWSAuthError, AWSPermissionError, NoDataError
+from autopsy.utils.errors import (
+    AWSAuthError,
+    AWSPermissionError,
+    CollectorError,
+    NoDataError,
+)
 
 console = Console(stderr=True)
 
-DEFAULT_QUERY = """\
+# Logs Insights query: filter error-level messages, sort newest first, limit 200
+INSIGHTS_QUERY = """\
 fields @timestamp, @message, @logStream
 | filter @message like /(?i)(error|exception|fatal|panic|timeout|5\\d{2})/
 | sort @timestamp desc
 | limit 200
 """
 
+POLL_INTERVALS = (0.5, 1.0, 2.0, 4.0)  # seconds; then 4s until 30s total
+POLL_TIMEOUT_TOTAL = 30
+
+MAX_MESSAGE_CHARS = 500
+STACK_TRACE_MAX_FRAMES = 5
 TOKEN_BUDGET = 6000
-MAX_ENTRY_CHARS = 500
-MAX_STACK_FRAMES = 5
-QUERY_POLL_INTERVAL = 1.0
-QUERY_POLL_MAX_WAIT = 120.0
-CHARS_PER_TOKEN = 4  # conservative estimate in lieu of tiktoken dependency
+TOKEN_ESTIMATE_CHARS_PER_TOKEN = 4
+
+# Patterns for template extraction (dedup)
+_RE_UUID = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+_RE_IP = re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
+_RE_TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
+)
+_RE_LONG_NUMBERS = re.compile(r"\b\d{4,}\b")
+_RE_HEX = re.compile(r"\b[0-9a-fA-F]{8,}\b")
+
+
+def _extract_template(message: str) -> str:
+    """Replace variable parts of log messages with placeholders for dedup.
+
+    Normalizes UUIDs, IPs, timestamps, long numbers, and hex strings so that
+    log lines that differ only by these values hash to the same template.
+
+    Args:
+        message: Raw log message.
+
+    Returns:
+        Normalized template string.
+    """
+    text = message
+    text = _RE_UUID.sub("<UUID>", text)
+    text = _RE_IP.sub("<IP>", text)
+    text = _RE_TIMESTAMP.sub("<TS>", text)
+    text = _RE_LONG_NUMBERS.sub("<NUM>", text)
+    text = _RE_HEX.sub("<HEX>", text)
+    return text
+
+
+def _truncate_message(msg: str) -> str:
+    """Cap message at MAX_MESSAGE_CHARS; trim stack traces to top 5 frames."""
+    lines = msg.split("\n")
+    # If it looks like a stack trace, keep first line (exception) + top 5 frames first
+    if len(lines) > 1 and ("Traceback" in lines[0] or "  File " in msg or " at " in msg):
+        first_line = lines[0]
+        frame_lines: list[str] = []
+        for line in lines[1:]:
+            stripped = line.strip()
+            if (stripped.startswith("File ") or stripped.startswith("at ")
+                    or (frame_lines and (stripped.startswith("  ") or not stripped))):
+                frame_lines.append(line)
+            else:
+                break
+        kept_frames = frame_lines[:STACK_TRACE_MAX_FRAMES]
+        msg = first_line + "\n" + "\n".join(kept_frames)
+        if len(frame_lines) > STACK_TRACE_MAX_FRAMES:
+            msg += "\n  ..."
+
+    if len(msg) <= MAX_MESSAGE_CHARS:
+        return msg
+    return msg[:MAX_MESSAGE_CHARS] + "…"
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token count: len/4 (no tiktoken dependency)."""
+    return max(1, len(text) // TOKEN_ESTIMATE_CHARS_PER_TOKEN)
+
+
+def _result_row_to_entry(row: list[dict]) -> dict:
+    """Convert a Logs Insights result row (list of field dicts) to our entry format."""
+    entry: dict = {}
+    for item in row:
+        k = item.get("field", "")
+        v = item.get("value", "")
+        if k == "@timestamp":
+            entry["@timestamp"] = v
+        elif k == "@message":
+            entry["@message"] = v
+        elif k == "@logStream":
+            entry["@logStream"] = v
+        elif k and not k.startswith("@"):
+            entry[k] = v
+    if "@message" not in entry:
+        entry["@message"] = ""
+    if "@timestamp" not in entry:
+        entry["@timestamp"] = ""
+    return entry
 
 
 class CloudWatchCollector(BaseCollector):
@@ -47,6 +139,9 @@ class CloudWatchCollector(BaseCollector):
     def validate_config(self, config: dict) -> bool:
         """Verify AWS credentials and CloudWatch permissions.
 
+        Uses describe_log_groups as a connectivity and auth check, and
+        verifies each configured log group exists.
+
         Args:
             config: The 'aws' section of AutopsyConfig.
 
@@ -55,23 +150,67 @@ class CloudWatchCollector(BaseCollector):
 
         Raises:
             AWSAuthError: On expired or invalid credentials.
-            AWSPermissionError: On missing logs:StartQuery permission.
+            AWSPermissionError: On missing logs:DescribeLogGroups permission.
         """
-        client = _make_client(config)
+        region = config.get("region", "us-east-1")
+        profile = config.get("profile")
+        log_groups = config.get("log_groups", [])
+
         try:
-            client.describe_log_groups(limit=1)
-        except ClientError as exc:
-            _raise_for_client_error(exc)
-        except BotoCoreError as exc:
+            session = boto3.Session(region_name=region, profile_name=profile)
+            client = session.client("logs")
+            for lg in log_groups:
+                found = False
+                paginator = client.get_paginator("describe_log_groups")
+                for page in paginator.paginate(logGroupNamePrefix=lg):
+                    for g in page.get("logGroups", []):
+                        if g.get("logGroupName") == lg:
+                            found = True
+                            break
+                    if found:
+                        break
+                if not found:
+                    raise AWSPermissionError(
+                        message=f"Log group not found: {lg}",
+                        hint=f"Check that {lg} exists and you have "
+                        "logs:DescribeLogGroups permission.",
+                    )
+        except botocore.exceptions.NoCredentialsError as exc:
             raise AWSAuthError(
-                message=f"AWS credential error: {exc}",
-                hint="Run 'aws configure' or check AWS_PROFILE.",
-                docs_url="https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html",
+                message="AWS credentials not found",
+                hint="Run 'aws configure' or set AWS_PROFILE=<profile> and try again.\n"
+                "Docs: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html",
+            ) from exc
+        except botocore.exceptions.ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code in ("AccessDeniedException", "AccessDenied"):
+                raise AWSPermissionError(
+                    message="Missing required CloudWatch Logs permissions",
+                    hint="IAM role needs: logs:DescribeLogGroups, logs:StartQuery, "
+                    "logs:GetQueryResults.\nDocs: https://docs.aws.amazon.com/"
+                    "AmazonCloudWatch/latest/logs/iam-identity-based-access-control-cwl.html",
+                ) from exc
+            if code in ("ExpiredToken", "ExpiredTokenException"):
+                raise AWSAuthError(
+                    message="AWS credentials have expired",
+                    hint="Refresh your credentials: run 'aws sso login' or "
+                    "update your session token.",
+                ) from exc
+            err_msg = exc.response.get("Error", {}).get("Message", str(exc))
+            raise CollectorError(
+                message=f"AWS CloudWatch error: {err_msg}",
+                hint="Check your AWS region and IAM permissions.",
             ) from exc
         return True
 
     def collect(self, config: dict) -> CollectedData:
         """Pull error logs from CloudWatch and apply reduction pipeline.
+
+        Pipeline stages:
+        1. Query-level regex filter (~90% reduction) — in the Insights query.
+        2. Deduplication by message template (~60% reduction).
+        3. Truncation to 500 chars per entry, stack traces to 5 frames (~40%).
+        4. Token budget hard cap at 6000 tokens (FIFO eviction).
 
         Args:
             config: The 'aws' section of AutopsyConfig.
@@ -82,332 +221,174 @@ class CloudWatchCollector(BaseCollector):
         Raises:
             AWSAuthError: On credential failure.
             AWSPermissionError: On IAM permission issues.
+            CollectorError: On query timeout or failure.
             NoDataError: On zero results.
         """
-        client = _make_client(config)
-        time_window = config.get("time_window", 30)
+        region = config.get("region", "us-east-1")
+        profile = config.get("profile")
         log_groups = config.get("log_groups", [])
+        time_window = int(config.get("time_window", 30))
 
-        end_time = datetime.now(tz=timezone.utc)
-        start_time = end_time - timedelta(minutes=time_window)
+        end_ts = datetime.now(tz=timezone.utc)
+        start_ts = end_ts - timedelta(minutes=time_window)
+        start_unix = int(start_ts.timestamp())
+        end_unix = int(end_ts.timestamp())
 
-        raw_entries: list[dict] = []
+        try:
+            session = boto3.Session(region_name=region, profile_name=profile)
+            client = session.client("logs")
+        except botocore.exceptions.NoCredentialsError as exc:
+            raise AWSAuthError(
+                message="AWS credentials not found",
+                hint="Run 'aws configure' or set AWS_PROFILE=<profile> and try again.\n"
+                "Docs: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html",
+            ) from exc
+
+        all_rows: list[dict] = []
         for lg in log_groups:
-            raw_entries.extend(
-                _run_insights_query(client, lg, start_time, end_time)
-            )
+            with console.status(f"Querying CloudWatch log group: {lg}...", spinner="dots"):
+                try:
+                    query_id = client.start_query(
+                        logGroupNames=[lg],
+                        startTime=start_unix,
+                        endTime=end_unix,
+                        queryString=INSIGHTS_QUERY.strip(),
+                    ).get("queryId")
+                except botocore.exceptions.ClientError as exc:
+                    code = exc.response.get("Error", {}).get("Code", "")
+                    if code in ("AccessDeniedException", "AccessDenied"):
+                        raise AWSPermissionError(
+                            message="Missing required CloudWatch Logs permissions",
+                            hint="IAM role needs: logs:DescribeLogGroups, logs:StartQuery, "
+                            "logs:GetQueryResults.\nDocs: https://docs.aws.amazon.com/"
+                            "AmazonCloudWatch/latest/logs/iam-identity-based-access-control-cwl.html",
+                        ) from exc
+                    if code in ("ExpiredToken", "ExpiredTokenException"):
+                        raise AWSAuthError(
+                            message="AWS credentials have expired",
+                            hint="Refresh your credentials: run 'aws sso login' or "
+                            "update your session token.",
+                        ) from exc
+                    q_err = exc.response.get("Error", {}).get("Message", str(exc))
+                    raise CollectorError(
+                        message=f"CloudWatch query failed: {q_err}",
+                        hint="Check log group name and IAM permissions.",
+                    ) from exc
 
-        total_before = len(raw_entries)
+                if not query_id:
+                    raise CollectorError(
+                        message="CloudWatch start_query did not return a queryId",
+                        hint="Retry or check AWS service status.",
+                    )
 
-        if total_before == 0:
+                # Poll with exponential backoff; max 30s total
+                elapsed = 0.0
+                for _idx, interval in enumerate(POLL_INTERVALS):
+                    if elapsed >= POLL_TIMEOUT_TOTAL:
+                        break
+                    time.sleep(interval)
+                    elapsed += interval
+                    resp = client.get_query_results(queryId=query_id)
+                    status = resp.get("status", "")
+                    if status == "Complete":
+                        for row in resp.get("results", []):
+                            all_rows.append(_result_row_to_entry(row))
+                        break
+                    if status == "Failed":
+                        raise CollectorError(
+                            message="CloudWatch Logs Insights query failed",
+                            hint="Check your query and log group; try a smaller time window.",
+                        )
+                    if status == "Cancelled":
+                        raise CollectorError(
+                            message="CloudWatch query was cancelled",
+                            hint="Retry the diagnosis.",
+                        )
+                else:
+                    # More polls at 4s until timeout
+                    while elapsed < POLL_TIMEOUT_TOTAL:
+                        time.sleep(4.0)
+                        elapsed += 4.0
+                        resp = client.get_query_results(queryId=query_id)
+                        status = resp.get("status", "")
+                        if status == "Complete":
+                            for row in resp.get("results", []):
+                                all_rows.append(_result_row_to_entry(row))
+                            break
+                        if status == "Failed":
+                            raise CollectorError(
+                                message="CloudWatch Logs Insights query failed",
+                                hint="Check your query and log group; try a smaller time window.",
+                            )
+                        if status == "Cancelled":
+                            raise CollectorError(
+                                message="CloudWatch query was cancelled",
+                                hint="Retry the diagnosis.",
+                            )
+                    else:
+                        raise CollectorError(
+                            message="CloudWatch query timed out (30s)",
+                            hint="Try a smaller time window or fewer log groups.",
+                        )
+
+        if not all_rows:
             raise NoDataError(
-                message=f"No error logs found in the last {time_window} minutes.",
-                hint=(
-                    "Check that your log groups are correct and contain recent "
-                    "error-level messages. Try increasing --time-window."
-                ),
+                message=f"No error-level logs found in the last {time_window} minutes",
+                hint="Verify your log_groups in ~/.autopsy/config.yaml point to active log groups.",
             )
 
-        # --- Stage 2: Deduplication ---
-        entries = _deduplicate(raw_entries)
+        # Stage 2: Deduplication by template
+        template_to_entry: dict[str, dict] = {}
+        for entry in all_rows:
+            msg = entry.get("@message", "")
+            template = _extract_template(msg)
+            key = sha256(template.encode("utf-8")).hexdigest()
+            if key in template_to_entry:
+                template_to_entry[key]["occurrences"] = (
+                    template_to_entry[key].get("occurrences", 1) + 1
+                )
+            else:
+                entry["occurrences"] = 1
+                template_to_entry[key] = entry
 
-        # --- Stage 3: Truncation ---
-        entries = [_truncate_entry(e) for e in entries]
+        deduped: list[dict] = list(template_to_entry.values())
 
-        # --- Stage 4: Token budget ---
-        entries, was_truncated = _apply_token_budget(entries)
+        # Stage 3: Truncation
+        for entry in deduped:
+            msg = entry.get("@message", "")
+            entry["@message"] = _truncate_message(msg)
 
+        # Stage 4: Token budget
+        truncated = False
+        total_tokens = sum(
+            _estimate_tokens(e.get("@message", "")) + _estimate_tokens(e.get("@timestamp", ""))
+            for e in deduped
+        )
+        if total_tokens > TOKEN_BUDGET:
+            truncated = True
+            current: list[dict] = []
+            current_tokens = 0
+            for entry in reversed(deduped):  # FIFO = keep newest, evict oldest
+                t = _estimate_tokens(entry.get("@message", "")) + _estimate_tokens(
+                    entry.get("@timestamp", "")
+                )
+                if current_tokens + t <= TOKEN_BUDGET:
+                    current.append(entry)
+                    current_tokens += t
+                else:
+                    break
+            deduped = list(reversed(current))
+
+        raw_query = (
+            f"Logs Insights filter (error|exception|fatal|panic|timeout|5xx); "
+            f"window={time_window}m; groups={len(log_groups)}"
+        )
         return CollectedData(
             source="cloudwatch",
             data_type="logs",
-            entries=entries,
-            time_range=(start_time, end_time),
-            raw_query=DEFAULT_QUERY.strip(),
-            entry_count=total_before,
-            truncated=was_truncated or len(entries) < total_before,
+            entries=deduped,
+            time_range=(start_ts, end_ts),
+            raw_query=raw_query,
+            entry_count=len(all_rows),
+            truncated=truncated,
         )
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_client(config: dict) -> boto3.client:
-    """Build a CloudWatch Logs boto3 client from config.
-
-    Args:
-        config: The 'aws' section dict.
-
-    Returns:
-        boto3 CloudWatch Logs client.
-    """
-    session_kwargs: dict = {}
-    if config.get("profile"):
-        session_kwargs["profile_name"] = config["profile"]
-
-    session = boto3.Session(**session_kwargs)
-    return session.client("logs", region_name=config.get("region", "us-east-1"))
-
-
-def _run_insights_query(
-    client: boto3.client,
-    log_group: str,
-    start: datetime,
-    end: datetime,
-) -> list[dict]:
-    """Execute a CloudWatch Logs Insights query and poll for results.
-
-    Args:
-        client: boto3 logs client.
-        log_group: CloudWatch log group name.
-        start: Query start time (UTC).
-        end: Query end time (UTC).
-
-    Returns:
-        List of raw result dicts with @timestamp, @message, @logStream.
-
-    Raises:
-        AWSAuthError: On credential failure.
-        AWSPermissionError: On missing IAM permissions.
-    """
-    try:
-        response = client.start_query(
-            logGroupName=log_group,
-            startTime=int(start.timestamp()),
-            endTime=int(end.timestamp()),
-            queryString=DEFAULT_QUERY,
-        )
-    except ClientError as exc:
-        _raise_for_client_error(exc)
-
-    query_id = response["queryId"]
-    return _poll_query(client, query_id)
-
-
-def _poll_query(client: boto3.client, query_id: str) -> list[dict]:
-    """Poll a Logs Insights query until complete.
-
-    Args:
-        client: boto3 logs client.
-        query_id: ID from start_query response.
-
-    Returns:
-        Flattened list of result entry dicts.
-    """
-    elapsed = 0.0
-    while elapsed < QUERY_POLL_MAX_WAIT:
-        result = client.get_query_results(queryId=query_id)
-        status = result.get("status", "")
-        if status == "Complete":
-            return _flatten_results(result.get("results", []))
-        if status in ("Failed", "Cancelled", "Timeout"):
-            return []
-        time.sleep(QUERY_POLL_INTERVAL)
-        elapsed += QUERY_POLL_INTERVAL
-    return []
-
-
-def _flatten_results(raw_results: list[list[dict]]) -> list[dict]:
-    """Convert Logs Insights result rows into flat dicts.
-
-    Each row is a list of {field, value} dicts. Flatten to {field: value}.
-
-    Args:
-        raw_results: Raw results from get_query_results.
-
-    Returns:
-        List of flat entry dicts.
-    """
-    entries = []
-    for row in raw_results:
-        entry: dict = {}
-        for field_obj in row:
-            key = field_obj.get("field", "")
-            val = field_obj.get("value", "")
-            if key and not key.startswith("@ptr"):
-                entry[key] = val
-        if entry:
-            entries.append(entry)
-    return entries
-
-
-def _raise_for_client_error(exc: ClientError) -> None:
-    """Map a boto3 ClientError to the appropriate Autopsy exception.
-
-    Args:
-        exc: The caught ClientError.
-
-    Raises:
-        AWSAuthError: On auth-related error codes.
-        AWSPermissionError: On access-denied error codes.
-    """
-    code = exc.response.get("Error", {}).get("Code", "")
-
-    if code in (
-        "ExpiredTokenException",
-        "UnrecognizedClientException",
-        "InvalidSignatureException",
-        "AuthFailure",
-    ):
-        raise AWSAuthError(
-            message=f"AWS authentication failed: {code}",
-            hint="Run 'aws configure' or set AWS_PROFILE and try again.",
-            docs_url="https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html",
-        ) from exc
-
-    if code in ("AccessDeniedException", "AccessDenied"):
-        raise AWSPermissionError(
-            message=f"AWS permission denied: {code}",
-            hint=(
-                "Ensure your IAM user/role has logs:StartQuery, "
-                "logs:GetQueryResults, and logs:DescribeLogGroups permissions."
-            ),
-            docs_url="https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/permissions-reference-cwl.html",
-        ) from exc
-
-    raise AWSAuthError(
-        message=f"AWS API error ({code}): {exc}",
-        hint="Check your AWS credentials and region configuration.",
-    ) from exc
-
-
-# ---------------------------------------------------------------------------
-# Reduction pipeline
-# ---------------------------------------------------------------------------
-
-
-_TEMPLATE_RE = re.compile(
-    r"(0x[0-9a-fA-F]+|"          # hex addresses
-    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*|"  # timestamps
-    r"\b[0-9a-f]{8,}\b|"         # long hex ids
-    r"\d+)"                       # any numeric sequence
-)
-
-
-def _template_hash(message: str) -> str:
-    """Produce a hash of the message with variable parts normalized.
-
-    Replaces numbers, hex addresses, timestamps, and UUIDs with
-    placeholders so structurally identical messages map to the same hash.
-
-    Args:
-        message: Raw log message string.
-
-    Returns:
-        Hex digest of the normalized template.
-    """
-    normalized = _TEMPLATE_RE.sub("<*>", message)
-    return hashlib.sha256(normalized.encode()).hexdigest()[:16]
-
-
-def _deduplicate(entries: list[dict]) -> list[dict]:
-    """Stage 2: Deduplicate by message template, keeping 1 instance + count.
-
-    Args:
-        entries: Raw log entries from the query.
-
-    Returns:
-        Deduplicated entries with an 'occurrences' count field.
-    """
-    seen: dict[str, dict] = {}
-    counts: dict[str, int] = {}
-
-    for entry in entries:
-        msg = entry.get("@message", "")
-        tmpl = _template_hash(msg)
-        if tmpl not in seen:
-            seen[tmpl] = entry
-            counts[tmpl] = 1
-        else:
-            counts[tmpl] += 1
-
-    result = []
-    for tmpl, entry in seen.items():
-        entry_copy = dict(entry)
-        entry_copy["occurrences"] = counts[tmpl]
-        result.append(entry_copy)
-    return result
-
-
-def _truncate_stack_trace(message: str) -> str:
-    """Trim stack traces to the top N frames.
-
-    Args:
-        message: Log message potentially containing a stack trace.
-
-    Returns:
-        Truncated message with at most MAX_STACK_FRAMES stack frames.
-    """
-    lines = message.split("\n")
-    frame_indices: list[int] = []
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith(("at ", "File ", "Traceback", "  File ")):
-            frame_indices.append(i)
-
-    if len(frame_indices) <= MAX_STACK_FRAMES:
-        return message
-
-    keep_up_to = frame_indices[MAX_STACK_FRAMES - 1]
-    kept = lines[: keep_up_to + 1]
-    omitted = len(frame_indices) - MAX_STACK_FRAMES
-    kept.append(f"  ... ({omitted} more frames omitted)")
-    return "\n".join(kept)
-
-
-def _truncate_entry(entry: dict) -> dict:
-    """Stage 3: Truncate a single entry's message to MAX_ENTRY_CHARS.
-
-    Also trims stack traces to top MAX_STACK_FRAMES frames.
-
-    Args:
-        entry: A log entry dict with '@message' key.
-
-    Returns:
-        Entry with truncated message.
-    """
-    msg = entry.get("@message", "")
-    msg = _truncate_stack_trace(msg)
-    if len(msg) > MAX_ENTRY_CHARS:
-        msg = msg[:MAX_ENTRY_CHARS] + "…"
-    result = dict(entry)
-    result["@message"] = msg
-    return result
-
-
-def _estimate_tokens(entries: list[dict]) -> int:
-    """Estimate token count for a list of entries.
-
-    Uses a simple character-based heuristic (1 token ~ 4 chars).
-
-    Args:
-        entries: Log entries to measure.
-
-    Returns:
-        Estimated token count.
-    """
-    total_chars = sum(len(str(e)) for e in entries)
-    return total_chars // CHARS_PER_TOKEN
-
-
-def _apply_token_budget(entries: list[dict]) -> tuple[list[dict], bool]:
-    """Stage 4: Evict oldest entries (FIFO) until under TOKEN_BUDGET.
-
-    Args:
-        entries: Deduplicated and truncated log entries.
-
-    Returns:
-        (entries within budget, whether any were evicted).
-    """
-    if _estimate_tokens(entries) <= TOKEN_BUDGET:
-        return entries, False
-
-    kept: list[dict] = []
-    for entry in entries:
-        candidate = [*kept, entry]
-        if _estimate_tokens(candidate) > TOKEN_BUDGET:
-            break
-        kept.append(entry)
-
-    return kept, True

@@ -5,12 +5,10 @@ Outputs DiagnosisResult as formatted JSON to stdout.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import sys
 
+from autopsy.ai.models import DiagnosisResult  # noqa: TC001 — used at runtime for render()
 from autopsy.renderers.terminal import BaseRenderer
-
-if TYPE_CHECKING:
-    from autopsy.ai.models import DiagnosisResult
 
 
 class JSONRenderer(BaseRenderer):
@@ -22,4 +20,6 @@ class JSONRenderer(BaseRenderer):
         Args:
             result: Structured diagnosis from the AI engine.
         """
-        raise NotImplementedError
+        sys.stdout.write(result.model_dump_json(indent=2))
+        sys.stdout.write("\n")
+        sys.stdout.flush()

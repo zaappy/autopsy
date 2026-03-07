@@ -32,7 +32,27 @@ def _handle_error(err: AutopsyError) -> None:
     sys.exit(1)
 
 
+def _print_version(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
+    if not value:
+        return
+    from autopsy import PROMPT_VERSION, __version__
+
+    out = Console()
+    out.print(f"[bold]autopsy[/bold]  {__version__}")
+    out.print(f"[bold]prompt[/bold]    {PROMPT_VERSION}")
+    out.print(f"[bold]python[/bold]    {sys.version.split()[0]}")
+    ctx.exit()
+
+
 @click.group()
+@click.option(
+    "--version",
+    is_flag=True,
+    callback=_print_version,
+    expose_value=False,
+    is_eager=True,
+    help="Show CLI version, prompt version, and Python version.",
+)
 def cli() -> None:
     """Autopsy — AI-powered incident diagnosis for engineering teams."""
 
@@ -60,7 +80,7 @@ def init() -> None:
 
 @cli.command()
 @click.option("--time-window", type=int, help="Minutes of logs to pull (5-60).")
-@click.option("--log-group", multiple=True, help="Override log groups from config.")
+@click.option("--log-group", "log_groups", multiple=True, help="Override log groups from config.")
 @click.option(
     "--provider",
     type=click.Choice(["anthropic", "openai"]),
@@ -70,14 +90,44 @@ def init() -> None:
 @click.option("--verbose", is_flag=True, help="Show debug-level detail.")
 def diagnose(
     time_window: int | None,
-    log_group: tuple[str, ...],
+    log_groups: tuple[str, ...],
     provider: str | None,
     output_json: bool,
     verbose: bool,
 ) -> None:
     """Run AI-powered incident diagnosis."""
-    console.print("[yellow]Diagnosis engine not yet implemented.[/yellow]")
-    sys.exit(1)
+    from autopsy.config import load_config
+    from autopsy.diagnosis import DiagnosisOrchestrator
+    from autopsy.renderers.json_out import JSONRenderer
+    from autopsy.renderers.terminal import TerminalRenderer
+
+    try:
+        cfg = load_config()
+    except AutopsyError as exc:
+        _handle_error(exc)
+
+    overrides = {}
+    if time_window is not None:
+        overrides["time_window"] = time_window
+    if log_groups:
+        overrides["log_groups"] = list(log_groups)
+    if provider is not None:
+        overrides["provider"] = provider
+
+    try:
+        orchestrator = DiagnosisOrchestrator(cfg)
+        result = orchestrator.run(
+            time_window=overrides.get("time_window"),
+            log_groups=overrides.get("log_groups"),
+            provider=overrides.get("provider"),
+        )
+    except AutopsyError as exc:
+        _handle_error(exc)
+
+    if output_json:
+        JSONRenderer().render(result)
+    else:
+        TerminalRenderer().render(result)
 
 
 # ---------------------------------------------------------------------------
