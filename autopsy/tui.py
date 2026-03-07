@@ -278,7 +278,8 @@ def _import_app() -> type:
 
         def _show_result(self, renderables: list[RenderableType]) -> None:
             mc = self.query_one("#main-content", Container)
-            mc.mount(ScrollableContainer(Static(Group(*renderables), id="result-panels"), id="result-scroll"))
+            scroll_content = Static(Group(*renderables), id="result-panels")
+            mc.mount(ScrollableContainer(scroll_content, id="result-scroll"))
             back = Static("[dim]Press Esc to return to menu[/dim]", classes="back-hint")
             mc.mount(back)
             self._view = "result"
@@ -385,6 +386,6 @@ def _import_app() -> type:
 
 def run_tui() -> int:
     """Entry point: run the Textual Autopsy app. Returns exit code from app.run()."""
-    AppClass = _import_app()
-    app = AppClass()
+    app_class = _import_app()
+    app = app_class()
     return app.run()

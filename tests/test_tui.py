@@ -6,8 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from autopsy.tui import BRAND_RED, render_logo, _make_tagline
-
+from autopsy.tui import BRAND_RED, _make_tagline, render_logo
 
 # ---------------------------------------------------------------------------
 # Logo and tagline
@@ -35,8 +34,8 @@ def test_autopsy_app_initializes_without_error() -> None:
     """Test that AutopsyApp can be constructed (textual must be installed)."""
     from autopsy.tui import _import_app
 
-    AppClass = _import_app()
-    app = AppClass()
+    app_class = _import_app()
+    app = app_class()
     assert app is not None
 
 
@@ -86,11 +85,13 @@ def test_cli_invokes_init_when_tui_returns_100() -> None:
 
     from autopsy.cli import cli
 
-    with patch("autopsy.tui.run_tui", return_value=100):
-        with patch("autopsy.config.init_wizard") as m_init_wizard:
-            m_init_wizard.return_value = Path.home() / ".autopsy" / "config.yaml"
-            runner = CliRunner()
-            runner.invoke(cli, [], catch_exceptions=False)
+    with (
+        patch("autopsy.tui.run_tui", return_value=100),
+        patch("autopsy.config.init_wizard") as m_init_wizard,
+    ):
+        m_init_wizard.return_value = Path.home() / ".autopsy" / "config.yaml"
+        runner = CliRunner()
+        runner.invoke(cli, [], catch_exceptions=False)
     m_init_wizard.assert_called_once()
 
 
@@ -102,13 +103,15 @@ def test_cli_invokes_validate_when_tui_returns_101() -> None:
 
     from autopsy.cli import cli
 
-    with patch("autopsy.tui.run_tui", return_value=101):
-        with patch("autopsy.config.load_config") as m_load:
-            with patch("autopsy.config.validate_config") as m_validate:
-                m_load.return_value = MagicMock()
-                m_validate.return_value = {}
-                runner = CliRunner()
-                runner.invoke(cli, [], catch_exceptions=False)
+    with (
+        patch("autopsy.tui.run_tui", return_value=101),
+        patch("autopsy.config.load_config") as m_load,
+        patch("autopsy.config.validate_config") as m_validate,
+    ):
+        m_load.return_value = MagicMock()
+        m_validate.return_value = {}
+        runner = CliRunner()
+        runner.invoke(cli, [], catch_exceptions=False)
     m_validate.assert_called_once()
 
 
@@ -124,11 +127,13 @@ def test_cli_invokes_config_show_when_tui_returns_102() -> None:
         github=GitHubConfig(repo="a/b"),
         ai=AIConfig(),
     )
-    with patch("autopsy.tui.run_tui", return_value=102):
-        with patch("autopsy.config.load_config") as m_load:
-            m_load.return_value = minimal_cfg
-            runner = CliRunner()
-            runner.invoke(cli, [], catch_exceptions=False)
+    with (
+        patch("autopsy.tui.run_tui", return_value=102),
+        patch("autopsy.config.load_config") as m_load,
+    ):
+        m_load.return_value = minimal_cfg
+        runner = CliRunner()
+        runner.invoke(cli, [], catch_exceptions=False)
     m_load.assert_called_once()
 
 
@@ -142,8 +147,8 @@ async def test_app_run_test_menu_visible() -> None:
     """Run the app with run_test(); menu and logo should be present."""
     from autopsy.tui import _import_app
 
-    AppClass = _import_app()
-    app = AppClass()
+    app_class = _import_app()
+    app = app_class()
     async with app.run_test() as pilot:
         await pilot.pause()
         # Default view is menu; logo and menu are mounted
