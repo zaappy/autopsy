@@ -103,13 +103,19 @@ def test_cli_invokes_validate_when_tui_returns_101() -> None:
 
     from autopsy.cli import cli
 
+    mock_status = {
+        "github_token": {"set": True, "source": "environment"},
+        "anthropic_key": {"set": True, "source": "environment", "primary": True},
+        "openai_key": {"set": True, "source": "environment", "primary": False},
+        "aws": {"found": True, "source": "profile 'default'"},
+    }
     with (
         patch("autopsy.tui.run_tui", return_value=101),
         patch("autopsy.config.load_config") as m_load,
         patch("autopsy.config.validate_config") as m_validate,
     ):
         m_load.return_value = MagicMock()
-        m_validate.return_value = {}
+        m_validate.return_value = mock_status
         runner = CliRunner()
         runner.invoke(cli, [], catch_exceptions=False)
     m_validate.assert_called_once()

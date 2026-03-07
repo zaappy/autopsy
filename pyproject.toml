@@ -32,6 +32,7 @@ classifiers = [
 keywords = ["incident", "diagnosis", "root-cause", "cloudwatch", "github", "ai", "llm"]
 dependencies = [
     "click>=8.0",
+    "python-dotenv>=1.0",
     "boto3>=1.28",
     "PyGitHub>=2.0",
     "rich>=13.0",
