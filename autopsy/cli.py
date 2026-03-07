@@ -62,6 +62,11 @@ _TUI_EXIT_CONFIG_SHOW = 102
 @click.pass_context
 def cli(ctx: click.Context) -> None:
     """Autopsy — AI-powered incident diagnosis for engineering teams."""
+    # Always load .env first so credentials are available for all commands
+    from autopsy.config import load_env
+
+    load_env()
+
     if ctx.invoked_subcommand is not None:
         return
     try:
@@ -162,6 +167,48 @@ def config() -> None:
     """Show or edit configuration."""
 
 
+def _format_credential_status(cfg) -> str:
+    """Format credential sources for config show."""
+    from autopsy.config import ENV_FILE, validate_config
+
+    status = validate_config(cfg)
+    lines = []
+    primary = cfg.ai.provider
+
+    # AI provider
+    lines.append(f"AI Provider: {primary} (primary)")
+
+    # Anthropic key
+    anth = status["anthropic_key"]
+    if anth["set"]:
+        src = "~/.autopsy/.env" if ENV_FILE.exists() else "environment variable"
+        role = " (primary)" if anth["primary"] else " (fallback)"
+        lines.append(f"Anthropic Key: {src} ✔{role}")
+    else:
+        if anth["primary"]:
+            lines.append(
+                "Anthropic Key: ✘ NOT SET — run 'autopsy init' or export ANTHROPIC_API_KEY"
+            )
+        else:
+            lines.append("Anthropic Key: ✘ NOT SET (optional — needed for --provider anthropic)")
+
+    # OpenAI key
+    openai = status["openai_key"]
+    if openai["set"]:
+        src = "~/.autopsy/.env" if ENV_FILE.exists() else "environment variable"
+        role = " (primary)" if openai["primary"] else " (fallback)"
+        lines.append(f"OpenAI Key:    {src} ✔{role}")
+    else:
+        if openai["primary"]:
+            lines.append(
+                "OpenAI Key:    ✘ NOT SET — run 'autopsy init' or export OPENAI_API_KEY"
+            )
+        else:
+            lines.append("OpenAI Key:    ✘ NOT SET (optional — needed for --provider openai)")
+
+    return "\n".join(lines)
+
+
 @config.command("show")
 @click.option("--reveal", is_flag=True, help="Show secret values unmasked.")
 def config_show(reveal: bool) -> None:
@@ -183,41 +230,86 @@ def config_show(reveal: bool) -> None:
             border_style="blue",
         )
     )
+    output.print(
+        Panel(
+            _format_credential_status(cfg),
+            title="Credentials",
+            border_style="cyan",
+        )
+    )
 
 
 @config.command("validate")
 def config_validate() -> None:
     """Verify credentials and connectivity for all integrations."""
-    from autopsy.config import load_config, validate_config
+    from autopsy.config import ENV_FILE, load_config, validate_config
 
     try:
         cfg = load_config()
     except AutopsyError as exc:
         _handle_error(exc)
 
-    env_status = validate_config(cfg)
+    status = validate_config(cfg)
 
     table = Table(title="Credential Check", show_header=True)
-    table.add_column("Env Var", style="bold")
+    table.add_column("Credential", style="bold")
     table.add_column("Status")
+    table.add_column("Source")
 
     all_ok = True
-    for var_name, is_set in env_status.items():
-        if is_set:
-            table.add_row(var_name, "[green]✔ Set[/green]")
-        else:
-            table.add_row(var_name, "[red]✘ Missing[/red]")
+    primary = cfg.ai.provider
+
+    # GitHub
+    gh = status["github_token"]
+    if gh["set"]:
+        table.add_row("GitHub Token", "[green]✔[/green]", gh["source"])
+    else:
+        table.add_row("GitHub Token", "[red]✘ Missing[/red]", gh["source"])
+        all_ok = False
+
+    # Anthropic
+    anth = status["anthropic_key"]
+    if anth["set"]:
+        label = " (primary)" if anth["primary"] else ""
+        table.add_row(f"Anthropic API Key{label}", "[green]✔[/green]", anth["source"])
+    else:
+        if anth["primary"]:
+            table.add_row("Anthropic API Key (primary)", "[red]✘ Missing[/red]", anth["source"])
             all_ok = False
+        else:
+            table.add_row("Anthropic API Key (optional)", "[yellow]⚠ not set[/yellow]", anth["source"])
+
+    # OpenAI
+    openai = status["openai_key"]
+    if openai["set"]:
+        label = " (primary)" if openai["primary"] else ""
+        table.add_row(f"OpenAI API Key{label}", "[green]✔[/green]", openai["source"])
+    else:
+        if openai["primary"]:
+            table.add_row("OpenAI API Key (primary)", "[red]✘ Missing[/red]", openai["source"])
+            all_ok = False
+        else:
+            table.add_row("OpenAI API Key (optional)", "[yellow]⚠ not set[/yellow]", openai["source"])
+
+    # AWS
+    aws = status["aws"]
+    if aws["found"]:
+        table.add_row("AWS Credentials", "[green]✔[/green]", aws["source"])
+    else:
+        table.add_row("AWS Credentials", "[red]✘ Not found[/red]", aws["source"])
+        all_ok = False
 
     output = Console()
+    if ENV_FILE.exists():
+        output.print(f"\n[dim]Credentials loaded from: {ENV_FILE}[/dim]")
     output.print(table)
 
     if all_ok:
         output.print("\n[green]All credentials are configured.[/green]")
     else:
         output.print(
-            "\n[yellow]⚠ Set the missing env vars before "
-            "running 'autopsy diagnose'.[/yellow]"
+            "\n[yellow]⚠ Run 'autopsy init' or set the missing credentials "
+            "before running 'autopsy diagnose'.[/yellow]"
         )
         sys.exit(1)
 

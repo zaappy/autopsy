@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -9,11 +10,15 @@ import yaml
 from pydantic import ValidationError
 
 from autopsy.config import (
+    AIConfig,
     AutopsyConfig,
+    ENV_FILE,
     load_config,
+    load_env,
     save_config,
     validate_config,
 )
+from autopsy.config import _write_env_file
 from autopsy.utils.errors import ConfigNotFoundError, ConfigValidationError
 
 if TYPE_CHECKING:
@@ -121,7 +126,7 @@ class TestAutopsyConfig:
 
     def test_openai_provider_accepted(self) -> None:
         data = _minimal_config_dict()
-        data["ai"] = {"provider": "openai", "api_key_env": "OPENAI_API_KEY"}
+        data["ai"] = {"provider": "openai"}
         cfg = AutopsyConfig(**data)
         assert cfg.ai.provider == "openai"
 
@@ -176,35 +181,145 @@ class TestLoadConfig:
 
 
 class TestValidateConfig:
-    """Env-var existence checks."""
+    """Credential resolution and source checks."""
 
     def test_vars_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         cfg = AutopsyConfig(**_minimal_config_dict())
         result = validate_config(cfg)
-        assert result == {"GITHUB_TOKEN": True, "ANTHROPIC_API_KEY": True}
+        assert result["github_token"]["set"] is True
+        assert result["anthropic_key"]["set"] is True
+        assert result["anthropic_key"]["primary"] is True
 
     def test_vars_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         cfg = AutopsyConfig(**_minimal_config_dict())
         result = validate_config(cfg)
-        assert result == {"GITHUB_TOKEN": False, "ANTHROPIC_API_KEY": False}
+        assert result["github_token"]["set"] is False
+        assert result["anthropic_key"]["set"] is False
+        assert result["anthropic_key"]["primary"] is True
 
     def test_partial_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         cfg = AutopsyConfig(**_minimal_config_dict())
         result = validate_config(cfg)
-        assert result["GITHUB_TOKEN"] is True
-        assert result["ANTHROPIC_API_KEY"] is False
+        assert result["github_token"]["set"] is True
+        assert result["anthropic_key"]["set"] is False
 
     def test_empty_var_counts_as_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "")
         cfg = AutopsyConfig(**_minimal_config_dict())
         result = validate_config(cfg)
-        assert result["GITHUB_TOKEN"] is False
+        assert result["github_token"]["set"] is False
+
+
+# ---------------------------------------------------------------------------
+# load_env tests
+# ---------------------------------------------------------------------------
+
+
+class TestLoadEnv:
+    """Dotenv loading from ~/.autopsy/.env."""
+
+    def test_load_env_handles_missing_file(self, tmp_path: Path, monkeypatch) -> None:
+        """Missing .env is a no-op."""
+        monkeypatch.setattr("autopsy.config.ENV_FILE", tmp_path / "nonexistent.env")
+        load_env()  # should not raise
+
+    def test_load_env_loads_from_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Variables from .env are loaded into os.environ."""
+        env_path = tmp_path / ".env"
+        env_path.write_text("TEST_LOAD_ENV_VAR=from_dotenv\n", encoding="utf-8")
+        monkeypatch.setattr("autopsy.config.ENV_FILE", env_path)
+        monkeypatch.delenv("TEST_LOAD_ENV_VAR", raising=False)
+        load_env()
+        assert os.environ.get("TEST_LOAD_ENV_VAR") == "from_dotenv"
+
+    def test_load_env_does_not_override_existing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """override=False: pre-existing env vars take precedence."""
+        env_path = tmp_path / ".env"
+        env_path.write_text("TEST_OVERRIDE_VAR=from_dotenv\n", encoding="utf-8")
+        monkeypatch.setattr("autopsy.config.ENV_FILE", env_path)
+        monkeypatch.setenv("TEST_OVERRIDE_VAR", "from_environment")
+        load_env()
+        assert os.environ.get("TEST_OVERRIDE_VAR") == "from_environment"
+
+
+# ---------------------------------------------------------------------------
+# get_active_api_key tests
+# ---------------------------------------------------------------------------
+
+
+class TestGetActiveApiKey:
+    """AIConfig.get_active_api_key resolves correct env var."""
+
+    def test_anthropic_primary(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-xxx")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        cfg = AIConfig(provider="anthropic")
+        assert cfg.get_active_api_key() == "sk-ant-xxx"
+        assert cfg.get_active_api_key(provider="anthropic") == "sk-ant-xxx"
+
+    def test_openai_primary(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-xxx")
+        cfg = AIConfig(provider="openai")
+        assert cfg.get_active_api_key() == "sk-xxx"
+        assert cfg.get_active_api_key(provider="openai") == "sk-xxx"
+
+    def test_provider_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-xxx")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-xxx")
+        cfg = AIConfig(provider="anthropic")
+        assert cfg.get_active_api_key(provider="openai") == "sk-openai-xxx"
+        assert cfg.get_active_api_key(provider="anthropic") == "sk-ant-xxx"
+
+    def test_missing_key_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        cfg = AIConfig(provider="anthropic")
+        assert cfg.get_active_api_key() == ""
+
+
+# ---------------------------------------------------------------------------
+# _write_env_file tests
+# ---------------------------------------------------------------------------
+
+
+class TestWriteEnvFile:
+    """Env file creation and permissions."""
+
+    def test_writes_env_with_correct_format(self, tmp_path: Path) -> None:
+        """Env file has expected format and 0o600 permissions."""
+        env_path = tmp_path / ".env"
+        _write_env_file({"GITHUB_TOKEN": "ghp_xxx", "ANTHROPIC_API_KEY": "sk-ant-xxx"}, env_path)
+        content = env_path.read_text(encoding="utf-8")
+        assert "GITHUB_TOKEN=ghp_xxx" in content
+        assert "ANTHROPIC_API_KEY=sk-ant-xxx" in content
+        assert "# Autopsy CLI credentials" in content
+        assert env_path.exists()
+        # On Unix, verify 0o600 permissions (owner read/write only)
+        import sys
+
+        if sys.platform != "win32" and hasattr(env_path.stat(), "st_mode"):
+            mode = env_path.stat().st_mode & 0o777
+            assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"
+
+    def test_creates_parent_dirs(self, tmp_path: Path) -> None:
+        """Parent directory is created if missing."""
+        env_path = tmp_path / "nested" / "dir" / ".env"
+        _write_env_file({"FOO": "bar"}, env_path)
+        assert env_path.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -267,10 +382,14 @@ class TestCLI:
 
         path = _write_yaml(tmp_path / "config.yaml", _minimal_config_dict())
         monkeypatch.setattr(config_mod, "CONFIG_PATH", path)
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         runner = CliRunner()
         result = runner.invoke(cli, ["config", "show"])
         assert result.exit_code == 0
         assert "us-east-1" in result.output
+        assert "Credentials" in result.output
+        assert "AI Provider" in result.output
 
     def test_config_validate_missing_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -301,7 +420,8 @@ class TestCLI:
         monkeypatch.setattr(config_mod, "CONFIG_PATH", path)
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         runner = CliRunner()
         result = runner.invoke(cli, ["config", "validate"])
         assert result.exit_code == 0
-        assert "Set" in result.output
+        assert "All credentials are configured" in result.output

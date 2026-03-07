@@ -19,12 +19,6 @@ if TYPE_CHECKING:
     from autopsy.ai.models import DiagnosisResult
     from autopsy.collectors.base import CollectedData
 
-_AI_KEY_ENV_BY_PROVIDER: dict[str, str] = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-}
-
-
 class DiagnosisOrchestrator:
     """Executes the full diagnosis pipeline."""
 
@@ -72,16 +66,19 @@ class DiagnosisOrchestrator:
             aws_dict["log_groups"] = list(log_groups)
 
         ai_provider = provider if provider is not None else self.config.ai.provider
-        api_key_env = _AI_KEY_ENV_BY_PROVIDER.get(
-            ai_provider, self.config.ai.api_key_env
-        )
-        api_key = os.environ.get(api_key_env, "")
+        api_key = self.config.ai.get_active_api_key(provider=ai_provider)
         if not api_key:
             from autopsy.utils.errors import AIAuthError
 
+            env_name = (
+                self.config.ai.anthropic_api_key_env
+                if ai_provider == "anthropic"
+                else self.config.ai.openai_api_key_env
+            )
+            provider_name = "Anthropic" if ai_provider == "anthropic" else "OpenAI"
             raise AIAuthError(
-                message=f"AI API key env var '{api_key_env}' is not set.",
-                hint=f"Export {api_key_env} before running diagnose.",
+                message=f"{provider_name} API key not found.",
+                hint=f"Run 'autopsy init' or export {env_name}.",
             )
 
         # Validate collectors
