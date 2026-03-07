@@ -303,9 +303,7 @@ class AIEngine:
         console.print("[yellow]Retry also failed — falling back to raw response.[/yellow]")
         return _fallback_result(retry_raw)
 
-    def _build_prompt(
-        self, collected_data: list[CollectedData]
-    ) -> tuple[str, str]:
+    def _build_prompt(self, collected_data: list[CollectedData]) -> tuple[str, str]:
         """Construct system and user prompts from collected data.
 
         Args:
@@ -356,7 +354,7 @@ def _extract_json(raw: str) -> str:
     text = raw.strip()
     if text.startswith("```"):
         first_newline = text.index("\n") if "\n" in text else 3
-        text = text[first_newline + 1:]
+        text = text[first_newline + 1 :]
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
@@ -364,7 +362,7 @@ def _extract_json(raw: str) -> str:
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
-        text = text[start:end + 1]
+        text = text[start : end + 1]
 
     return text
 

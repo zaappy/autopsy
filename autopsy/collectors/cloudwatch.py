@@ -87,8 +87,11 @@ def _truncate_message(msg: str) -> str:
         frame_lines: list[str] = []
         for line in lines[1:]:
             stripped = line.strip()
-            if (stripped.startswith("File ") or stripped.startswith("at ")
-                    or (frame_lines and (stripped.startswith("  ") or not stripped))):
+            if (
+                stripped.startswith("File ")
+                or stripped.startswith("at ")
+                or (frame_lines and (stripped.startswith("  ") or not stripped))
+            ):
                 frame_lines.append(line)
             else:
                 break

@@ -7,7 +7,6 @@ the structured result. Rendering is the caller's responsibility.
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 from autopsy.ai.engine import AIEngine
@@ -18,6 +17,7 @@ from autopsy.config import AutopsyConfig  # noqa: TC001 — used at runtime for 
 if TYPE_CHECKING:
     from autopsy.ai.models import DiagnosisResult
     from autopsy.collectors.base import CollectedData
+
 
 class DiagnosisOrchestrator:
     """Executes the full diagnosis pipeline."""

@@ -200,9 +200,7 @@ def _format_credential_status(cfg) -> str:
         lines.append(f"OpenAI Key:    {src} ✔{role}")
     else:
         if openai["primary"]:
-            lines.append(
-                "OpenAI Key:    ✘ NOT SET — run 'autopsy init' or export OPENAI_API_KEY"
-            )
+            lines.append("OpenAI Key:    ✘ NOT SET — run 'autopsy init' or export OPENAI_API_KEY")
         else:
             lines.append("OpenAI Key:    ✘ NOT SET (optional — needed for --provider openai)")
 
@@ -257,7 +255,6 @@ def config_validate() -> None:
     table.add_column("Source")
 
     all_ok = True
-    primary = cfg.ai.provider
 
     # GitHub
     gh = status["github_token"]
@@ -277,7 +274,9 @@ def config_validate() -> None:
             table.add_row("Anthropic API Key (primary)", "[red]✘ Missing[/red]", anth["source"])
             all_ok = False
         else:
-            table.add_row("Anthropic API Key (optional)", "[yellow]⚠ not set[/yellow]", anth["source"])
+            table.add_row(
+                "Anthropic API Key (optional)", "[yellow]⚠ not set[/yellow]", anth["source"]
+            )
 
     # OpenAI
     openai = status["openai_key"]
@@ -289,7 +288,9 @@ def config_validate() -> None:
             table.add_row("OpenAI API Key (primary)", "[red]✘ Missing[/red]", openai["source"])
             all_ok = False
         else:
-            table.add_row("OpenAI API Key (optional)", "[yellow]⚠ not set[/yellow]", openai["source"])
+            table.add_row(
+                "OpenAI API Key (optional)", "[yellow]⚠ not set[/yellow]", openai["source"]
+            )
 
     # AWS
     aws = status["aws"]

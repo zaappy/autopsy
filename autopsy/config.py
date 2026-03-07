@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
-from rich.text import Text
 
 from autopsy.utils.errors import ConfigNotFoundError, ConfigValidationError
 
@@ -35,6 +34,7 @@ def load_env() -> None:
     """
     if ENV_FILE.exists():
         load_dotenv(ENV_FILE, override=False)
+
 
 _AWS_REGION_RE = re.compile(r"^[a-z]{2}(-[a-z]+-\d+)$")
 _REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
@@ -110,9 +110,7 @@ class AIConfig(BaseModel):
             API key string, or empty string if not set.
         """
         p = provider if provider is not None else self.provider
-        env_name = (
-            self.anthropic_api_key_env if p == "anthropic" else self.openai_api_key_env
-        )
+        env_name = self.anthropic_api_key_env if p == "anthropic" else self.openai_api_key_env
         return os.environ.get(env_name, "")
 
 
@@ -302,7 +300,7 @@ def _validate_github_token(token: str, repo: str) -> bool:
     if not token:
         return False
     try:
-        from github import Auth, Github, GithubException
+        from github import Auth, Github
 
         gh = Github(auth=Auth.Token(token))
         gh.get_repo(repo)
@@ -409,10 +407,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
     # AI
     console.print("\n[bold cyan]AI Provider Configuration[/bold cyan]")
     provider = Prompt.ask("AI provider", choices=["anthropic", "openai"], default="anthropic")
-    if provider == "anthropic":
-        default_model = "claude-sonnet-4-20250514"
-    else:
-        default_model = "gpt-4o"
+    default_model = "claude-sonnet-4-20250514" if provider == "anthropic" else "gpt-4o"
     model = Prompt.ask("Model name", default=default_model)
 
     try:
@@ -440,14 +435,16 @@ def init_wizard(config_path: Path | None = None) -> Path:
     env_entries: dict[str, str] = {}
 
     # GitHub token
-    for attempt in range(3):
+    for _attempt in range(3):
         token = Prompt.ask(
             "GitHub Token (ghp_... or github_pat_...)",
             default="",
             password=True,
         ).strip()
         if not token:
-            console.print("[yellow]⚠ GitHub token is required. Please enter a valid token.[/yellow]")
+            console.print(
+                "[yellow]⚠ GitHub token is required. Please enter a valid token.[/yellow]"
+            )
             continue
         if _validate_github_token(token, repo):
             env_entries["GITHUB_TOKEN"] = token
@@ -466,7 +463,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
 
     if provider == "anthropic":
         # Anthropic primary
-        for attempt in range(3):
+        for _attempt in range(3):
             anth_key = Prompt.ask(
                 f"Anthropic API Key ({primary_label})",
                 default="",
@@ -502,7 +499,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
             console.print("[dim]⏭ Skipped[/dim]")
     else:
         # OpenAI primary
-        for attempt in range(3):
+        for _attempt in range(3):
             openai_key = Prompt.ask(
                 f"OpenAI API Key ({primary_label})",
                 default="",
@@ -589,9 +586,6 @@ def _render_config_summary(config: AutopsyConfig) -> None:
         f"[bold]GitHub[/bold]  repo={config.github.repo}  "
         f"branch={config.github.branch}  "
         f"deploys={config.github.deploy_count}",
-        f"[bold]AI[/bold]  provider={config.ai.provider}  "
-        f"model={config.ai.model}",
+        f"[bold]AI[/bold]  provider={config.ai.provider}  model={config.ai.model}",
     ]
-    console.print(
-        Panel("\n".join(lines), title="Configuration Summary", border_style="green")
-    )
+    console.print(Panel("\n".join(lines), title="Configuration Summary", border_style="green"))
