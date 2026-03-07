@@ -26,28 +26,30 @@ from autopsy.utils.errors import AIAuthError, AIRateLimitError, AITimeoutError
 
 def _valid_json_response() -> str:
     """Return a well-formed DiagnosisResult JSON string."""
-    return json.dumps({
-        "root_cause": {
-            "summary": "NullPointerException from missing null check",
-            "category": "code_change",
-            "confidence": 0.9,
-            "evidence": ["ERROR: NullPointerException in handler"],
-        },
-        "correlated_deploy": {
-            "commit_sha": "abc1234",
-            "author": "dev",
-            "pr_title": "fix handler",
-            "changed_files": ["src/handler.py"],
-        },
-        "suggested_fix": {
-            "immediate": "Revert commit abc1234",
-            "long_term": "Add null guards and unit tests",
-        },
-        "timeline": [
-            {"time": "2026-03-06T10:00:00Z", "event": "Commit merged"},
-            {"time": "2026-03-06T10:05:00Z", "event": "First error"},
-        ],
-    })
+    return json.dumps(
+        {
+            "root_cause": {
+                "summary": "NullPointerException from missing null check",
+                "category": "code_change",
+                "confidence": 0.9,
+                "evidence": ["ERROR: NullPointerException in handler"],
+            },
+            "correlated_deploy": {
+                "commit_sha": "abc1234",
+                "author": "dev",
+                "pr_title": "fix handler",
+                "changed_files": ["src/handler.py"],
+            },
+            "suggested_fix": {
+                "immediate": "Revert commit abc1234",
+                "long_term": "Add null guards and unit tests",
+            },
+            "timeline": [
+                {"time": "2026-03-06T10:00:00Z", "event": "Commit merged"},
+                {"time": "2026-03-06T10:05:00Z", "event": "First error"},
+            ],
+        }
+    )
 
 
 def _malformed_response() -> str:
@@ -292,10 +294,12 @@ class TestDiagnoseRetry:
     """LLM returns malformed JSON → retry with correction → success."""
 
     def test_retry_succeeds(self) -> None:
-        engine, mock_prov = _make_engine([
-            _malformed_response(),
-            _valid_json_response(),
-        ])
+        engine, mock_prov = _make_engine(
+            [
+                _malformed_response(),
+                _valid_json_response(),
+            ]
+        )
         result = engine.diagnose([_logs_data()])
 
         assert result.root_cause.category == "code_change"
@@ -303,10 +307,12 @@ class TestDiagnoseRetry:
         assert mock_prov.chat.call_count == 2
 
     def test_retry_includes_correction_prompt(self) -> None:
-        engine, mock_prov = _make_engine([
-            _malformed_response(),
-            _valid_json_response(),
-        ])
+        engine, mock_prov = _make_engine(
+            [
+                _malformed_response(),
+                _valid_json_response(),
+            ]
+        )
         engine.diagnose([_logs_data()])
 
         retry_call = mock_prov.chat.call_args_list[1]
@@ -327,10 +333,12 @@ class TestDiagnoseFallback:
     """LLM returns malformed JSON twice → fallback to raw."""
 
     def test_fallback_to_raw(self) -> None:
-        engine, mock_prov = _make_engine([
-            _malformed_response(),
-            "still not json",
-        ])
+        engine, mock_prov = _make_engine(
+            [
+                _malformed_response(),
+                "still not json",
+            ]
+        )
         result = engine.diagnose([_logs_data()])
 
         assert result.raw_response == "still not json"
@@ -348,31 +356,39 @@ class TestDiagnoseErrors:
     """Auth, rate limit, and timeout errors bubble up correctly."""
 
     def test_auth_error(self) -> None:
-        engine, _ = _make_engine([
-            AIAuthError(message="API key is invalid.", hint="Check key."),
-        ])
+        engine, _ = _make_engine(
+            [
+                AIAuthError(message="API key is invalid.", hint="Check key."),
+            ]
+        )
         with pytest.raises(AIAuthError, match="invalid"):
             engine.diagnose([_logs_data()])
 
     def test_rate_limit_error(self) -> None:
-        engine, _ = _make_engine([
-            AIRateLimitError(message="Rate limit exceeded.", hint="Wait."),
-        ])
+        engine, _ = _make_engine(
+            [
+                AIRateLimitError(message="Rate limit exceeded.", hint="Wait."),
+            ]
+        )
         with pytest.raises(AIRateLimitError, match="Rate limit"):
             engine.diagnose([_logs_data()])
 
     def test_timeout_error(self) -> None:
-        engine, _ = _make_engine([
-            AITimeoutError(message="API timed out after 60s.", hint="Retry."),
-        ])
+        engine, _ = _make_engine(
+            [
+                AITimeoutError(message="API timed out after 60s.", hint="Retry."),
+            ]
+        )
         with pytest.raises(AITimeoutError, match="timed out"):
             engine.diagnose([_logs_data()])
 
     def test_auth_error_on_retry_still_raises(self) -> None:
         """First call returns malformed JSON, retry raises auth error."""
-        engine, _ = _make_engine([
-            _malformed_response(),
-            AIAuthError(message="Token revoked.", hint="Re-create key."),
-        ])
+        engine, _ = _make_engine(
+            [
+                _malformed_response(),
+                AIAuthError(message="Token revoked.", hint="Re-create key."),
+            ]
+        )
         with pytest.raises(AIAuthError, match="revoked"):
             engine.diagnose([_logs_data()])

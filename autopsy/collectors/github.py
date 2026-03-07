@@ -19,10 +19,19 @@ from autopsy.utils.errors import GitHubAuthError, GitHubRateLimitError, NoDataEr
 
 console = Console(stderr=True)
 
-INCLUDE_EXTENSIONS: frozenset[str] = frozenset({
-    ".py", ".js", ".ts", ".go", ".java",
-    ".yaml", ".yml", ".json", ".tf",
-})
+INCLUDE_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".py",
+        ".js",
+        ".ts",
+        ".go",
+        ".java",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".tf",
+    }
+)
 INCLUDE_FILENAMES: frozenset[str] = frozenset({"Dockerfile"})
 
 _EXCLUDE_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -138,10 +147,7 @@ class GitHubCollector(BaseCollector):
             entry = _build_entry(commit)
             entries.append(entry)
 
-        timestamps = [
-            e["timestamp"] for e in entries
-            if e.get("timestamp")
-        ]
+        timestamps = [e["timestamp"] for e in entries if e.get("timestamp")]
         if timestamps:
             start = min(datetime.fromisoformat(t) for t in timestamps)
             end = max(datetime.fromisoformat(t) for t in timestamps)
@@ -269,13 +275,15 @@ def _build_entry(commit) -> dict:
     file_entries: list[dict] = []
     for f in kept:
         diff = _cap_diff(f.patch or "") if f.patch else ""
-        file_entries.append({
-            "filename": f.filename,
-            "status": f.status,
-            "additions": f.additions,
-            "deletions": f.deletions,
-            "diff": diff,
-        })
+        file_entries.append(
+            {
+                "filename": f.filename,
+                "status": f.status,
+                "additions": f.additions,
+                "deletions": f.deletions,
+                "diff": diff,
+            }
+        )
 
     pr_info = _find_pr_for_commit(commit)
 

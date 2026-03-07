@@ -39,7 +39,6 @@ def _minimal_config() -> AutopsyConfig:
         ai=AIConfig(
             provider="anthropic",
             model="claude-sonnet-4-20250514",
-            api_key_env="ANTHROPIC_API_KEY",
         ),
         output=OutputConfig(),
     )
@@ -176,8 +175,31 @@ class TestOrchestratorRun:
 
         from autopsy.utils.errors import AIAuthError
 
-        with pytest.raises(AIAuthError, match="not set"):
+        with pytest.raises(AIAuthError, match="not found"):
             orch.run()
+
+    @patch("autopsy.diagnosis.AIEngine")
+    @patch("autopsy.diagnosis.GitHubCollector")
+    @patch("autopsy.diagnosis.CloudWatchCollector")
+    def test_run_raises_clear_error_for_provider_override_missing_key(
+        self,
+        mock_cw_cls: MagicMock,
+        mock_gh_cls: MagicMock,
+        mock_engine_cls: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--provider openai with missing OpenAI key shows clear error."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp-test")
+
+        config = _minimal_config()
+        orch = DiagnosisOrchestrator(config)
+
+        from autopsy.utils.errors import AIAuthError
+
+        with pytest.raises(AIAuthError, match="OpenAI API key not found"):
+            orch.run(provider="openai")
 
 
 # ---------------------------------------------------------------------------
