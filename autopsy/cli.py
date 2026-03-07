@@ -44,7 +44,13 @@ def _print_version(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     ctx.exit()
 
 
-@click.group()
+# Exit codes returned by TUI when user selects Init / Validate / Config (so we run the command)
+_TUI_EXIT_INIT = 100
+_TUI_EXIT_VALIDATE = 101
+_TUI_EXIT_CONFIG_SHOW = 102
+
+
+@click.group(invoke_without_command=True)
 @click.option(
     "--version",
     is_flag=True,
@@ -53,8 +59,24 @@ def _print_version(ctx: click.Context, _param: click.Parameter, value: bool) -> 
     is_eager=True,
     help="Show CLI version, prompt version, and Python version.",
 )
-def cli() -> None:
+@click.pass_context
+def cli(ctx: click.Context) -> None:
     """Autopsy — AI-powered incident diagnosis for engineering teams."""
+    if ctx.invoked_subcommand is not None:
+        return
+    try:
+        from autopsy.tui import run_tui
+
+        code = run_tui()
+    except ImportError:
+        click.echo(ctx.get_help())
+        return
+    if code == _TUI_EXIT_INIT:
+        ctx.invoke(init)
+    elif code == _TUI_EXIT_VALIDATE:
+        ctx.invoke(config_validate)
+    elif code == _TUI_EXIT_CONFIG_SHOW:
+        ctx.invoke(config_show)
 
 
 # ---------------------------------------------------------------------------
