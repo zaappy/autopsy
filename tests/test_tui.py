@@ -1,12 +1,11 @@
-"""Tests for autopsy TUI — interactive mode and CLI wiring."""
+"""Tests for autopsy interactive inline CLI."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
+from autopsy.interactive import BRAND_RED, _make_tagline, render_logo
 
-from autopsy.tui import BRAND_RED, _make_tagline, render_logo
 
 # ---------------------------------------------------------------------------
 # Logo and tagline
@@ -26,139 +25,95 @@ def test_make_tagline_includes_version_and_prompt() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AutopsyApp initializes (requires textual)
+# CLI: no subcommand launches interactive mode
 # ---------------------------------------------------------------------------
 
 
-def test_autopsy_app_initializes_without_error() -> None:
-    """Test that AutopsyApp can be constructed (textual must be installed)."""
-    from autopsy.tui import _import_app
-
-    app_class = _import_app()
-    app = app_class()
-    assert app is not None
-
-
-# ---------------------------------------------------------------------------
-# CLI: no subcommand launches TUI
-# ---------------------------------------------------------------------------
-
-
-def test_cli_with_no_subcommand_calls_run_tui() -> None:
-    """With no args, cli() should call run_tui() (we mock it to avoid starting the app)."""
+def test_cli_with_no_subcommand_calls_run_interactive() -> None:
+    """With no args, cli() should call run_interactive() (mocked to avoid I/O)."""
     from click.testing import CliRunner
 
     from autopsy.cli import cli
 
-    with patch("autopsy.tui.run_tui") as m_run_tui:
-        m_run_tui.return_value = 0
+    with patch("autopsy.interactive.run_interactive") as m_run:
+        m_run.return_value = None
         runner = CliRunner()
         result = runner.invoke(cli, [], catch_exceptions=False)
-    m_run_tui.assert_called_once()
+    m_run.assert_called_once()
     assert result.exit_code == 0
 
 
-def test_cli_fallback_to_help_when_tui_import_fails() -> None:
-    """When run_tui raises ImportError (e.g. textual not installed), print help."""
-    from click.testing import CliRunner
-
-    from autopsy.cli import cli
-
-    with patch("autopsy.tui.run_tui", side_effect=ImportError("No module named 'textual'")):
-        runner = CliRunner()
-        result = runner.invoke(cli, [], catch_exceptions=False)
-    assert result.exit_code == 0
-    assert "Autopsy" in result.output or "autopsy" in result.output
-    assert "diagnose" in result.output or "init" in result.output
-
-
 # ---------------------------------------------------------------------------
-# TUI exit codes invoke correct commands
+# run_interactive: menu loop behaviour (questionary mocked)
 # ---------------------------------------------------------------------------
 
 
-def test_cli_invokes_init_when_tui_returns_100() -> None:
-    """TUI exit code 100 should run the init path (init_wizard called)."""
-    from pathlib import Path
+def test_run_interactive_quit_exits_cleanly() -> None:
+    """Selecting Quit should exit the loop without error."""
+    from autopsy.interactive import run_interactive
 
-    from click.testing import CliRunner
-
-    from autopsy.cli import cli
-
-    with (
-        patch("autopsy.tui.run_tui", return_value=100),
-        patch("autopsy.config.init_wizard") as m_init_wizard,
-    ):
-        m_init_wizard.return_value = Path.home() / ".autopsy" / "config.yaml"
-        runner = CliRunner()
-        runner.invoke(cli, [], catch_exceptions=False)
-    m_init_wizard.assert_called_once()
+    with patch("questionary.select") as mock_select:
+        mock_q = mock_select.return_value
+        mock_q.ask.return_value = "Quit"
+        run_interactive()
+    mock_select.assert_called_once()
 
 
-def test_cli_invokes_validate_when_tui_returns_101() -> None:
-    """TUI exit code 101 should run the validate path (validate_config called)."""
+def test_run_interactive_none_answer_exits_cleanly() -> None:
+    """If questionary returns None (e.g. Ctrl-C), the loop exits cleanly."""
+    from autopsy.interactive import run_interactive
+
+    with patch("questionary.select") as mock_select:
+        mock_q = mock_select.return_value
+        mock_q.ask.return_value = None
+        run_interactive()
+    mock_select.assert_called_once()
+
+
+def test_run_interactive_diagnose_calls_orchestrator() -> None:
+    """Selecting Diagnose should invoke DiagnosisOrchestrator.run()."""
     from unittest.mock import MagicMock
 
-    from click.testing import CliRunner
+    from autopsy.interactive import run_interactive
 
-    from autopsy.cli import cli
+    mock_result = MagicMock()
+    mock_result.correlated_deploy.commit_sha = "abc1234"
 
-    mock_status = {
-        "github_token": {"set": True, "source": "environment"},
-        "anthropic_key": {"set": True, "source": "environment", "primary": True},
-        "openai_key": {"set": True, "source": "environment", "primary": False},
-        "aws": {"found": True, "source": "profile 'default'"},
-    }
     with (
-        patch("autopsy.tui.run_tui", return_value=101),
-        patch("autopsy.config.load_config") as m_load,
-        patch("autopsy.config.validate_config") as m_validate,
+        patch("questionary.select") as mock_select,
+        patch("autopsy.config.load_config") as mock_load,
+        patch("autopsy.diagnosis.DiagnosisOrchestrator") as mock_orch_cls,
+        patch("autopsy.renderers.terminal.TerminalRenderer.render"),
     ):
-        m_load.return_value = MagicMock()
-        m_validate.return_value = mock_status
-        runner = CliRunner()
-        runner.invoke(cli, [], catch_exceptions=False)
-    m_validate.assert_called_once()
+        mock_q = mock_select.return_value
+        # First call: Diagnose; second call: Quit
+        mock_q.ask.side_effect = [
+            "Diagnose  — Pull logs + deploys → AI root cause",
+            "Quit",
+        ]
+        mock_load.return_value = MagicMock()
+        mock_orch = mock_orch_cls.return_value
+        mock_orch.run.return_value = mock_result
+
+        run_interactive()
+
+    mock_orch.run.assert_called_once()
 
 
-def test_cli_invokes_config_show_when_tui_returns_102() -> None:
-    """TUI exit code 102 should run the config show path (load_config called)."""
-    from click.testing import CliRunner
+def test_run_interactive_setup_calls_init_wizard() -> None:
+    """Selecting Setup should call init_wizard()."""
+    from autopsy.interactive import run_interactive
 
-    from autopsy.cli import cli
-    from autopsy.config import AIConfig, AutopsyConfig, AWSConfig, GitHubConfig
-
-    minimal_cfg = AutopsyConfig(
-        aws=AWSConfig(region="us-east-1", log_groups=["/x"]),
-        github=GitHubConfig(repo="a/b"),
-        ai=AIConfig(),
-    )
     with (
-        patch("autopsy.tui.run_tui", return_value=102),
-        patch("autopsy.config.load_config") as m_load,
+        patch("questionary.select") as mock_select,
+        patch("autopsy.config.init_wizard") as mock_wizard,
     ):
-        m_load.return_value = minimal_cfg
-        runner = CliRunner()
-        runner.invoke(cli, [], catch_exceptions=False)
-    m_load.assert_called_once()
+        mock_q = mock_select.return_value
+        mock_q.ask.side_effect = [
+            "Setup     — Interactive wizard (AWS, GitHub, AI)",
+            "Quit",
+        ]
+        mock_wizard.return_value = None
+        run_interactive()
 
-
-# ---------------------------------------------------------------------------
-# Textual run_test (async)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_app_run_test_menu_visible() -> None:
-    """Run the app with run_test(); menu and logo should be present."""
-    from autopsy.tui import _import_app
-
-    app_class = _import_app()
-    app = app_class()
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        # Default view is menu; logo and menu are mounted
-        logo = app.query_one("#logo")
-        menu = app.query_one("#menu")
-        assert logo is not None
-        assert menu is not None
+    mock_wizard.assert_called_once()
