@@ -18,7 +18,6 @@ from autopsy.config import (
     save_config,
     validate_config,
 )
-from autopsy.config import _write_env_file
 from autopsy.utils.errors import ConfigNotFoundError, ConfigValidationError
 
 if TYPE_CHECKING:
