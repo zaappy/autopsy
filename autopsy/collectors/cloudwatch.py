@@ -5,7 +5,7 @@ Implements a multi-stage reduction pipeline: query filter, deduplication,
 truncation, and token budgeting.
 
 Stage 1 (query-level filter): Handled by the Logs Insights query regex
-filtering for error|exception|fatal|panic|timeout|5xx — no code needed here.
+filtering for error|exception|fatal|panic|timeout|4xx|5xx — no code needed here.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ console = Console(stderr=True)
 # Logs Insights query: filter error-level messages, sort newest first, limit 200
 INSIGHTS_QUERY = """\
 fields @timestamp, @message, @logStream
-| filter @message like /(?i)(error|exception|fatal|panic|timeout|5\\d{2})/
+| filter @message like /(?i)(error|exception|fatal|panic|timeout|[45]\\d{2})/
 | sort @timestamp desc
 | limit 200
 """
@@ -381,7 +381,7 @@ class CloudWatchCollector(BaseCollector):
             deduped = list(reversed(current))  # restore chronological (oldest-first) order
 
         raw_query = (
-            f"Logs Insights filter (error|exception|fatal|panic|timeout|5xx); "
+            f"Logs Insights filter (error|exception|fatal|panic|timeout|4xx|5xx); "
             f"window={time_window}m; groups={len(log_groups)}"
         )
         return CollectedData(

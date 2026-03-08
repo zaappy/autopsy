@@ -99,7 +99,7 @@ def run_interactive() -> None:
         elif choice.startswith("Diagnose"):
             console.print()
             _run_diagnose_inline()
-            console.print()
+            console.input("\n[dim]Press Enter to return to menu...[/dim]")
         elif choice.startswith("Setup"):
             from autopsy.config import init_wizard
 
@@ -110,7 +110,7 @@ def run_interactive() -> None:
                 console.print(f"[bold red]❌ {e.message}[/bold red]")
                 if e.hint:
                     console.print(f"[green]✅ {e.hint}[/green]")
-            console.print()
+            console.input("\n[dim]Press Enter to return to menu...[/dim]")
         elif choice.startswith("Validate"):
             from click.testing import CliRunner
 

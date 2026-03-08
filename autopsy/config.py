@@ -295,19 +295,27 @@ def mask_secrets(config: AutopsyConfig) -> dict:
     return data
 
 
-def _validate_github_token(token: str, repo: str) -> bool:
-    """Validate GitHub token by fetching repo. Returns True if valid."""
+def _validate_github_token(token: str, repo: str) -> tuple[bool, str]:
+    """Validate GitHub token. Returns (ok, reason) where reason describes any failure."""
     if not token:
-        return False
+        return False, "token is empty"
     try:
-        from github import Auth, Github
+        from github import Auth, Github, GithubException
 
         gh = Github(auth=Auth.Token(token))
-        gh.get_repo(repo)
-        gh.close()
-        return True
-    except Exception:
-        return False
+        try:
+            gh.get_repo(repo)
+            gh.close()
+            return True, ""
+        except GithubException as e:
+            gh.close()
+            if e.status == 401:
+                return False, "token is invalid or expired (401)"
+            if e.status == 404:
+                return False, f"repo '{repo}' not found or token lacks 'repo' scope (404)"
+            return False, f"GitHub error {e.status}: {e.data.get('message', '')}"
+    except Exception as e:
+        return False, str(e)
 
 
 def _validate_anthropic_key(key: str) -> bool:
@@ -435,9 +443,10 @@ def init_wizard(config_path: Path | None = None) -> Path:
     env_entries: dict[str, str] = {}
 
     # GitHub token
+    console.print("[dim]Token input is hidden for security (paste and press Enter)[/dim]")
     for _attempt in range(3):
         token = Prompt.ask(
-            "GitHub Token (ghp_... or github_pat_...)",
+            "GitHub Token (ghp_... or github_pat_...)(⚠ctrl+shift+v to paste)",
             default="",
             password=True,
         ).strip()
@@ -446,15 +455,16 @@ def init_wizard(config_path: Path | None = None) -> Path:
                 "[yellow]⚠ GitHub token is required. Please enter a valid token.[/yellow]"
             )
             continue
-        if _validate_github_token(token, repo):
+        ok, reason = _validate_github_token(token, repo)
+        if ok:
             env_entries["GITHUB_TOKEN"] = token
             console.print("[green]✔ Verified[/green]")
             break
-        console.print("[red]✘ Invalid token or no access to repo. Try again.[/red]")
+        console.print(f"[red]✘ {reason}. Try again.[/red]")
     else:
         raise ConfigValidationError(
             message="GitHub token validation failed after 3 attempts.",
-            hint="Check your token at https://github.com/settings/tokens",
+            hint="Check your token at https://github.com/settings/tokens — needs 'repo' scope",
         )
 
     # AI keys — primary required, secondary optional
@@ -465,7 +475,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
         # Anthropic primary
         for _attempt in range(3):
             anth_key = Prompt.ask(
-                f"Anthropic API Key ({primary_label})",
+                f"Anthropic API Key ({primary_label})(⚠ctrl+shift+v to paste)",
                 default="",
                 password=True,
             ).strip()
@@ -485,7 +495,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
 
         # OpenAI optional
         openai_key = Prompt.ask(
-            f"OpenAI API Key ({secondary_label})",
+            f"OpenAI API Key ({secondary_label})(⚠ctrl+shift+v to paste)",
             default="",
             password=True,
         ).strip()
