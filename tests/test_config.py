@@ -418,6 +418,11 @@ class TestCLI:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setattr(
+            config_mod,
+            "_check_aws_credentials",
+            lambda _: {"found": True, "source": "profile 'default'"},
+        )
         runner = CliRunner()
         result = runner.invoke(cli, ["config", "validate"])
         assert result.exit_code == 0
