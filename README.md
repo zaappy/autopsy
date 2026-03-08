@@ -12,7 +12,8 @@
 ## Install
 
 ```bash
-pip install autopsy-cli
+pip install autopsy-cli          # core CLI (no TUI)
+pip install "autopsy-cli[tui]"   # + interactive terminal UI (requires textual)
 ```
 
 Or from source:

@@ -36,7 +36,7 @@ def load_env() -> None:
         load_dotenv(ENV_FILE, override=False)
 
 
-_AWS_REGION_RE = re.compile(r"^[a-z]{2}(-[a-z]+-\d+)$")
+_AWS_REGION_RE = re.compile(r"^[a-z]{2,4}(?:-[a-z][a-z0-9]*)+-\d+$")
 _REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 
 console = Console()
