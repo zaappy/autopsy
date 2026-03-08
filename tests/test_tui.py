@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 from autopsy.interactive import BRAND_RED, _make_tagline, render_logo
 
-
 # ---------------------------------------------------------------------------
 # Logo and tagline
 # ---------------------------------------------------------------------------
