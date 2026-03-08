@@ -114,38 +114,39 @@ class GitHubCollector(BaseCollector):
         deploy_count = config.get("deploy_count", 5)
 
         try:
-            repo = gh.get_repo(repo_name)
-        except RateLimitExceededException as exc:
-            raise GitHubRateLimitError(
-                message="GitHub API rate limit exceeded.",
-                hint="Wait for the rate limit to reset, or use a PAT with higher limits.",
-            ) from exc
-        except GithubException as exc:
-            _raise_for_github_error(exc, repo_name)
+            try:
+                repo = gh.get_repo(repo_name)
+            except RateLimitExceededException as exc:
+                raise GitHubRateLimitError(
+                    message="GitHub API rate limit exceeded.",
+                    hint="Wait for the rate limit to reset, or use a PAT with higher limits.",
+                ) from exc
+            except GithubException as exc:
+                _raise_for_github_error(exc, repo_name)
 
-        try:
-            commits_page = repo.get_commits(sha=branch)
-            commits = list(commits_page[:deploy_count])
-        except RateLimitExceededException as exc:
-            raise GitHubRateLimitError(
-                message="GitHub API rate limit exceeded while fetching commits.",
-                hint="Wait for the rate limit to reset, or use a PAT with higher limits.",
-            ) from exc
-        except GithubException as exc:
-            _raise_for_github_error(exc, repo_name)
+            try:
+                commits_page = repo.get_commits(sha=branch)
+                commits = list(commits_page[:deploy_count])
+            except RateLimitExceededException as exc:
+                raise GitHubRateLimitError(
+                    message="GitHub API rate limit exceeded while fetching commits.",
+                    hint="Wait for the rate limit to reset, or use a PAT with higher limits.",
+                ) from exc
+            except GithubException as exc:
+                _raise_for_github_error(exc, repo_name)
+
+            if not commits:
+                raise NoDataError(
+                    message=f"No commits found on branch '{branch}'.",
+                    hint="Check that the branch exists and has commits.",
+                )
+
+            entries: list[dict] = []
+            for commit in commits:
+                entry = _build_entry(commit)
+                entries.append(entry)
         finally:
             gh.close()
-
-        if not commits:
-            raise NoDataError(
-                message=f"No commits found on branch '{branch}'.",
-                hint="Check that the branch exists and has commits.",
-            )
-
-        entries: list[dict] = []
-        for commit in commits:
-            entry = _build_entry(commit)
-            entries.append(entry)
 
         timestamps = [e["timestamp"] for e in entries if e.get("timestamp")]
         if timestamps:

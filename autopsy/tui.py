@@ -137,7 +137,7 @@ def _import_app() -> type:
     from textual.widgets import Footer, OptionList, Static
     from textual.widgets.option_list import Option
 
-    class AutopsyApp(App[None]):
+    class AutopsyApp(App[int]):
         """Interactive TUI for Autopsy CLI."""
 
         CSS = """

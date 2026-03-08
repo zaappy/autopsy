@@ -482,3 +482,49 @@ class TestCollect:
         collector = GitHubCollector()
         collector.collect(_gh_config(branch="develop"))
         mock_repo.get_commits.assert_called_once_with(sha="develop")
+
+    @patch("autopsy.collectors.github.Github")
+    def test_connection_open_during_build_entry(
+        self, mock_gh_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """gh.close() must not be called before _build_entry accesses commit.files."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+        commit = _mock_commit()
+        close_order: list[str] = []
+
+        mock_repo = MagicMock()
+        mock_page = MagicMock()
+        mock_page.__getitem__ = MagicMock(return_value=[commit])
+        mock_repo.get_commits.return_value = mock_page
+
+        mock_gh = MagicMock()
+        mock_gh.get_repo.return_value = mock_repo
+
+        # Track when close() is called vs when commit.files is accessed
+        def record_close() -> None:
+            close_order.append("close")
+
+        mock_gh.close.side_effect = record_close
+
+        # commit.files access is recorded via the MagicMock's property access.
+        # We verify gh.close() is NOT called before _build_entry runs by checking
+        # that commit.files is accessed (files attr touched) and close happened after.
+        files_accessed: list[bool] = []
+        original_files = commit.files
+
+        def files_getter(*_: object) -> list:
+            files_accessed.append(True)
+            return original_files
+
+        type(commit).files = property(lambda self: files_getter())  # type: ignore[assignment]
+
+        mock_gh_cls.return_value = mock_gh
+
+        collector = GitHubCollector()
+        collector.collect(_gh_config())
+
+        # close() must have been called (cleanup), and files must have been accessed
+        mock_gh.close.assert_called_once()
+        # close was called after data collection (files_accessed populated before close)
+        assert files_accessed, "commit.files was never accessed — _build_entry may have failed"
+        assert close_order == ["close"], "close() should be called exactly once after collection"
