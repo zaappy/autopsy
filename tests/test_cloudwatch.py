@@ -279,6 +279,45 @@ class TestTokenBudget:
         assert result.truncated is True
         assert len(result.entries) < 100
 
+    @patch("autopsy.collectors.cloudwatch.boto3.Session")
+    def test_budget_keeps_newest_entries(self, mock_session: MagicMock) -> None:
+        """Eviction must keep the newest entries (CloudWatch returns desc order).
+
+        100 entries, each ~122 tokens. Budget = 6000 → ~49 fit.
+        rows[0] = entry_000 (newest), rows[99] = entry_099 (oldest).
+        After eviction only the newest ~49 entries should remain;
+        old entries (index >= 60) must not appear in the result.
+        """
+        rows = [
+            _insights_row(
+                timestamp=f"2026-03-06T{10 + i // 60:02d}:{i % 60:02d}:00Z",
+                message=f"ENTRY_{i:03d} " + "x" * 450,  # ~122 tokens each
+            )
+            for i in range(100)
+        ]
+        # rows[0] = ENTRY_000 (most recent per desc sort), rows[99] = ENTRY_099 (oldest)
+        client = _mock_logs_client(get_results_rows=rows)
+        mock_session.return_value.client.return_value = client
+
+        collector = CloudWatchCollector()
+        result = collector.collect(_aws_config())
+
+        assert result.truncated is True
+        kept_messages = [e.get("@message", "") for e in result.entries]
+        kept_indices = set()
+        for msg in kept_messages:
+            prefix = msg.split(" ")[0]  # "ENTRY_000" (or "ENTRY_000…" if truncated)
+            raw = prefix.replace("ENTRY_", "").rstrip("…")
+            kept_indices.add(int(raw))
+
+        # Oldest entries (high index) must have been evicted; none above index 60 should appear
+        old_entries_kept = {idx for idx in kept_indices if idx >= 60}
+        assert not old_entries_kept, (
+            f"Expected oldest entries evicted but found indices: {sorted(old_entries_kept)}"
+        )
+        # Newest entries (low index) must be present
+        assert 0 in kept_indices, "Newest entry (index 0) should always be kept"
+
 
 # ---------------------------------------------------------------------------
 # Empty results

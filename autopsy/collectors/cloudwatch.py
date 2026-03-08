@@ -371,16 +371,14 @@ class CloudWatchCollector(BaseCollector):
             truncated = True
             current: list[dict] = []
             current_tokens = 0
-            for entry in reversed(deduped):  # FIFO = keep newest, evict oldest
+            for entry in deduped:  # deduped is newest-first; keep newest entries that fit
                 t = _estimate_tokens(entry.get("@message", "")) + _estimate_tokens(
                     entry.get("@timestamp", "")
                 )
                 if current_tokens + t <= TOKEN_BUDGET:
                     current.append(entry)
                     current_tokens += t
-                else:
-                    break
-            deduped = list(reversed(current))
+            deduped = list(reversed(current))  # restore chronological (oldest-first) order
 
         raw_query = (
             f"Logs Insights filter (error|exception|fatal|panic|timeout|5xx); "
