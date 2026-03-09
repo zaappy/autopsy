@@ -83,6 +83,7 @@ def test_run_interactive_diagnose_calls_orchestrator() -> None:
         patch("autopsy.config.load_config") as mock_load,
         patch("autopsy.diagnosis.DiagnosisOrchestrator") as mock_orch_cls,
         patch("autopsy.renderers.terminal.TerminalRenderer.render"),
+        patch("rich.console.Console.input"),
     ):
         mock_q = mock_select.return_value
         # First call: Diagnose; second call: Quit
@@ -106,6 +107,7 @@ def test_run_interactive_setup_calls_init_wizard() -> None:
     with (
         patch("questionary.select") as mock_select,
         patch("autopsy.config.init_wizard") as mock_wizard,
+        patch("rich.console.Console.input"),
     ):
         mock_q = mock_select.return_value
         mock_q.ask.side_effect = [
