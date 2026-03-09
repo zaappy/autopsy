@@ -6,8 +6,26 @@
 
 **AI-powered incident diagnosis for engineering teams.** Pull production error logs and recent deploys, send them to an LLM, and get a structured root cause analysis in the terminal in under a minute. Zero-trust: your data never leaves your environment.
 
-<!-- TODO: Add demo GIF when available -->
-<!-- ![Demo](docs/demo.gif) -->
+## Demo
+
+Watch a short walkthrough of the TUI and diagnosis flow:
+
+**[Watch demo (video)](docs/demo.mp4)**
+
+## Prerequisites
+
+Before running Autopsy, you need:
+
+| Area | Requirement |
+|------|-------------|
+| **AWS** | Account with CloudWatch Logs; credentials via `aws configure` or `AWS_PROFILE`; IAM: `logs:DescribeLogGroups`, `logs:StartQuery`, `logs:GetQueryResults`; at least one log group. *Check:* `aws sts get-caller-identity` returns your account ID. |
+| **GitHub** | Account + [Personal Access Token](https://github.com/settings/tokens) with **`repo`** scope; your app’s repo on GitHub. *Check:* `curl -H "Authorization: Bearer YOUR_TOKEN" https://api.github.com/user` returns your username. |
+| **AI provider** | **OpenAI** ([platform.openai.com](https://platform.openai.com)) or **Anthropic** ([console.anthropic.com](https://console.anthropic.com)) — account, API key, and credits. |
+| **Local** | Python 3.10+ (`python --version`), pip, terminal, internet. |
+
+**Quick checklist:** `python --version` → 3.10+ · `aws sts get-caller-identity` → OK · GitHub PAT with `repo` · OpenAI or Anthropic API key · `pip install autopsy-cli` · `autopsy init` · `autopsy diagnose`.
+
+**You do not need:** a server, Docker, a separate cloud account for Autopsy, a database, or admin/root; no changes to your AWS or app code.
 
 ## Install
 
@@ -97,6 +115,8 @@ autopsy config validate   # Check env vars and connectivity
 If `textual` is not installed, `autopsy` with no arguments prints help instead of starting the TUI.
 
 ## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, code style, and how to submit changes. In short:
 
 1. Fork the repo and create a branch.
 2. Install dev deps: `pip install -e ".[dev]"`.
