@@ -1,5 +1,14 @@
 # Autopsy CLI
 
+<pre style="color: #FF0800; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 14px; line-height: 1.2; margin: 0;">
+ █████  ██    ██ ████████  ██████  ██████  ███████ ██    ██
+██   ██ ██    ██    ██    ██    ██ ██   ██ ██       ██  ██
+███████ ██    ██    ██    ██    ██ ██████  ███████   ████
+██   ██ ██    ██    ██    ██    ██ ██           ██    ██
+██   ██  ██████     ██     ██████  ██      ███████    ██
+</pre>
+*AI-powered incident diagnosis • zero-trust*
+
 [![CI](https://github.com/zaappy/autopsy/actions/workflows/ci.yml/badge.svg)](https://github.com/zaappy/autopsy/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/autopsy-cli.svg)](https://pypi.org/project/autopsy-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
