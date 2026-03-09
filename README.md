@@ -10,7 +10,7 @@
 
 Watch a short walkthrough of the TUI and diagnosis flow:
 
-<video src="https://github.com/zaappy/autopsy/raw/main/docs/demo.mp4" controls width="100%"></video>
+F:\Autopsy-zaappy\08.03.2026_20.19.30_REC.mp4
 
 ## Prerequisites
 
