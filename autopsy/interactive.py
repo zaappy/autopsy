@@ -81,6 +81,7 @@ def run_interactive() -> None:
 
     choices = [
         "Diagnose  — Pull logs + deploys → AI root cause",
+        "History   — View diagnosis history",
         "Setup     — Interactive wizard (AWS, GitHub, AI)",
         "Validate  — Test credentials and connectivity",
         "Show config — Current config (secrets masked)",
@@ -100,6 +101,15 @@ def run_interactive() -> None:
             console.print()
             _run_diagnose_inline()
             console.input("\n[dim]Press Enter to return to menu...[/dim]")
+        elif choice.startswith("History"):
+            from click.testing import CliRunner
+
+            from autopsy.cli import cli
+
+            console.print()
+            runner = CliRunner(mix_stderr=False)
+            result = runner.invoke(cli, ["history", "list"], catch_exceptions=False)
+            console.print(result.output)
         elif choice.startswith("Setup"):
             from autopsy.config import init_wizard
 

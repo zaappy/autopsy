@@ -92,3 +92,22 @@ class AITimeoutError(AIError):
 
 class RenderError(AutopsyError):
     """Terminal or file rendering failure (typically non-fatal)."""
+
+
+# --- History errors ---
+
+
+class HistoryError(AutopsyError):
+    """Base for diagnosis history (SQLite) errors."""
+
+
+class HistoryAmbiguousMatchError(HistoryError):
+    """A prefix matched multiple diagnoses."""
+
+    def __init__(self, *, prefix: str, candidates: list[dict]) -> None:
+        self.prefix = prefix
+        self.candidates = candidates
+        super().__init__(
+            message=f"Multiple diagnoses match '{prefix}'.",
+            hint="Use the full diagnosis ID.",
+        )
