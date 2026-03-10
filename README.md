@@ -61,7 +61,7 @@ autopsy diagnose  # Or: run diagnosis directly (CloudWatch + GitHub → AI → p
 **Interactive TUI** — Run `autopsy` with no arguments to open the interactive terminal UI:
 
 - **AUTOPSY** logo and tagline (*AI-powered incident diagnosis • zero-trust*)
-- Arrow-key menu: **Diagnose**, **Setup configuration**, **Validate connections**, **Show config**, **Diagnosis history** (cloud, disabled)
+- Arrow-key menu: **Diagnose**, **History**, **Setup**, **Validate**, **Show config**
 - Shortcuts: `d` Diagnose, `i` Init, `v` Validate, `c` Config, `q` Quit, `Esc` Back
 - Choosing **Diagnose** runs the full pipeline inside the TUI (progress steps, then 4-panel result). Errors are shown inline; press `Esc` to return to the menu.
 - Choosing **Setup** / **Validate** / **Show config** exits the TUI and runs the corresponding CLI command in your terminal.
@@ -77,6 +77,7 @@ After `autopsy init`, edit `~/.autopsy/config.yaml` or re-run the wizard. The in
 | **aws**  | CloudWatch region, log groups, time window (minutes). Uses your AWS CLI credentials. |
 | **github** | Repo (`owner/repo`), branch, number of recent commits to analyze. Uses `GITHUB_TOKEN`. |
 | **ai**   | Provider (`anthropic` or `openai`), model, API keys. |
+| **slack** | Optional webhook integration for posting diagnoses to Slack. |
 
 Credentials are loaded from `~/.autopsy/.env` automatically. If you prefer env vars, export them in your shell — they take precedence over the `.env` file.
 
@@ -112,11 +113,21 @@ autopsy config validate   # Check env vars and connectivity
 |--------|-------------|
 | `autopsy` | **Interactive TUI** — menu with Diagnose, Setup, Validate, Config (requires `textual`) |
 | `autopsy init` | Interactive config wizard |
+| `autopsy init --slack` | Configure only Slack integration (webhook test + save) |
 | `autopsy diagnose` | Run full diagnosis pipeline (same as TUI “Diagnose”) |
 | `autopsy diagnose --json` | Output raw JSON |
+| `autopsy diagnose --postmortem` | Generate markdown post-mortem output |
+| `autopsy diagnose --postmortem --postmortem-path ./incident.md` | Write post-mortem to explicit path |
+| `autopsy diagnose --slack` | Post diagnosis output to Slack webhook |
 | `autopsy diagnose --time-window 15` | Override log window (minutes) |
 | `autopsy diagnose --log-group /aws/lambda/foo` | Override log groups (repeatable) |
 | `autopsy diagnose --provider openai` | Use OpenAI instead of Anthropic |
+| `autopsy history list` | List saved diagnoses (newest first) |
+| `autopsy history show <id>` | Show a saved diagnosis (supports short ID prefix) |
+| `autopsy history show <id> --postmortem` | Generate post-mortem from saved diagnosis |
+| `autopsy history search "query"` | Search saved diagnoses |
+| `autopsy history stats` | Show history statistics |
+| `autopsy history export ./history.json --format json` | Export history to JSON or CSV |
 | `autopsy config show` | Print config (secrets masked) |
 | `autopsy config validate` | Check credentials and connectivity |
 | `autopsy version` / `autopsy --version` | CLI version, prompt version, Python version |

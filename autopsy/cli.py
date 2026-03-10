@@ -6,6 +6,7 @@ All business logic is delegated to config.py, diagnosis.py, and renderers.
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +33,15 @@ def _handle_error(err: AutopsyError) -> None:
         text.append(f"\nDocs: {err.docs_url}\n", style="dim")
     console.print(Panel(text, border_style="red"))
     sys.exit(1)
+
+
+def _resolve_slack_webhook(cfg) -> str:
+    """Resolve Slack webhook URL from config/env. Returns empty string if unavailable."""
+    slack_cfg = getattr(cfg, "slack", None)
+    if not slack_cfg or not slack_cfg.enabled:
+        return ""
+    env_name = slack_cfg.webhook_url_env or "AUTOPSY_SLACK_WEBHOOK"
+    return os.environ.get(env_name, "")
 
 
 def _print_version(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
@@ -76,12 +86,20 @@ def cli(ctx: click.Context) -> None:
 
 
 @cli.command()
-def init() -> None:
+@click.option(
+    "--slack",
+    is_flag=True,
+    help="Configure only Slack integration (requires existing config).",
+)
+def init(slack: bool) -> None:
     """Interactive configuration wizard. Creates ~/.autopsy/config.yaml."""
-    from autopsy.config import init_wizard
+    from autopsy.config import init_slack_only, init_wizard
 
     try:
-        init_wizard()
+        if slack:
+            init_slack_only()
+        else:
+            init_wizard()
     except AutopsyError as exc:
         _handle_error(exc)
 
@@ -101,12 +119,31 @@ def init() -> None:
 )
 @click.option("--json", "output_json", is_flag=True, help="Output raw JSON instead of panels.")
 @click.option("--verbose", is_flag=True, help="Show debug-level detail.")
+@click.option(
+    "--postmortem",
+    "-pm",
+    is_flag=True,
+    help="Generate markdown post-mortem report.",
+)
+@click.option(
+    "--postmortem-path",
+    type=click.Path(),
+    help="Output path for post-mortem (default: ./postmortem-{date}.md)",
+)
+@click.option(
+    "--slack",
+    is_flag=True,
+    help="Post diagnosis to Slack.",
+)
 def diagnose(
     time_window: int | None,
     log_groups: tuple[str, ...],
     provider: str | None,
     output_json: bool,
     verbose: bool,
+    postmortem: bool,
+    postmortem_path: str | None,
+    slack: bool,
 ) -> None:
     """Run AI-powered incident diagnosis."""
     from autopsy.config import load_config
@@ -119,7 +156,7 @@ def diagnose(
     except AutopsyError as exc:
         _handle_error(exc)
 
-    overrides = {}
+    overrides: dict[str, object] = {}
     if time_window is not None:
         overrides["time_window"] = time_window
     if log_groups:
@@ -127,13 +164,28 @@ def diagnose(
     if provider is not None:
         overrides["provider"] = provider
 
+    # Compute effective settings for metadata (mirrors DiagnosisOrchestrator logic).
+    ai_provider = overrides.get("provider") or cfg.ai.provider
+    ai_provider_str = str(ai_provider)
+    model = (
+        cfg.ai.model
+        if ai_provider_str == cfg.ai.provider
+        else ("gpt-4o" if ai_provider_str == "openai" else cfg.ai.model)
+    )
+    effective_log_groups = list(overrides.get("log_groups") or cfg.aws.log_groups)
+    effective_time_window = int(overrides.get("time_window") or cfg.aws.time_window)
+
     try:
         orchestrator = DiagnosisOrchestrator(cfg)
+        import time as _time
+
+        start = _time.monotonic()
         result = orchestrator.run(
             time_window=overrides.get("time_window"),
             log_groups=overrides.get("log_groups"),
-            provider=overrides.get("provider"),
+            provider=ai_provider_str,
         )
+        duration_s = round(_time.monotonic() - start, 2)
     except AutopsyError as exc:
         _handle_error(exc)
 
@@ -141,6 +193,44 @@ def diagnose(
         JSONRenderer().render(result)
     else:
         TerminalRenderer().render(result)
+
+    if postmortem:
+        from autopsy.renderers.postmortem import PostMortemMetadata, PostMortemRenderer
+
+        pm = PostMortemRenderer()
+        meta = PostMortemMetadata(
+            provider=ai_provider_str,
+            model=model,
+            log_groups=effective_log_groups,
+            time_window=effective_time_window,
+            duration_s=duration_s,
+        )
+        if postmortem_path:
+            path = Path(postmortem_path)
+            output = pm.render(result, output_path=path, metadata=meta)
+            console.print(f"[green]✔ Post-mortem saved to {output}[/green]")
+        else:
+            markdown = pm.render(result, output_path=None, metadata=meta)
+            default_path = Path(pm._generate_filename(result))
+            default_path.write_text(markdown, encoding="utf-8")
+            console.print(f"[green]✔ Post-mortem saved to {default_path}[/green]")
+
+    if slack:
+        webhook_url = _resolve_slack_webhook(cfg)
+        if webhook_url:
+            from autopsy.renderers.slack import SlackRenderer
+
+            slack_renderer = SlackRenderer(webhook_url)
+            try:
+                slack_renderer.render(result)
+                console.print("[green]✔ Diagnosis posted to Slack[/green]")
+            except AutopsyError as exc:
+                console.print(f"[yellow]⚠ Slack failed: {exc.message}[/yellow]")
+        else:
+            console.print(
+                "[yellow]⚠ Slack not configured. "
+                "Set AUTOPSY_SLACK_WEBHOOK in your environment or config.[/yellow]"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +376,14 @@ def config_validate() -> None:
         table.add_row("AWS Credentials", "[red]✘ Not found[/red]", aws["source"])
         all_ok = False
 
+    # Slack (optional)
+    slack = status.get("slack", {"configured": False, "channel": "", "source": "not set"})
+    if slack["configured"]:
+        chan = slack.get("channel") or "unknown"
+        table.add_row("Slack", "[green]✔[/green]", f"channel {chan}")
+    else:
+        table.add_row("Slack", "[yellow]⚠ not configured[/yellow]", "optional")
+
     output = Console()
     if ENV_FILE.exists():
         output.print(f"\n[dim]Credentials loaded from: {ENV_FILE}[/dim]")
@@ -384,7 +482,13 @@ def history_list(limit: int) -> None:
 
 @history.command(name="show")
 @click.argument("diagnosis_id")
-def history_show(diagnosis_id: str) -> None:
+@click.option(
+    "--postmortem",
+    "-pm",
+    is_flag=True,
+    help="Generate post-mortem from saved diagnosis.",
+)
+def history_show(diagnosis_id: str, postmortem: bool) -> None:
     """Show full details of a past diagnosis."""
     import json
 
@@ -432,6 +536,28 @@ def history_show(diagnosis_id: str) -> None:
 
     out.print(f"Diagnosis from {created_at} ({duration_s}) — {repo}\n")
     TerminalRenderer().render(result)
+
+    if postmortem:
+        from autopsy.renderers.postmortem import PostMortemMetadata, PostMortemRenderer
+
+        log_groups_raw = row.get("log_groups")
+        try:
+            log_groups = json.loads(log_groups_raw) if log_groups_raw else []
+        except Exception:
+            log_groups = []
+
+        meta = PostMortemMetadata(
+            provider=str(row.get("provider") or ""),
+            model=str(row.get("model") or ""),
+            log_groups=list(log_groups),
+            time_window=int(row.get("time_window") or 0),
+            duration_s=(float(duration) if duration is not None else None),
+        )
+        pm = PostMortemRenderer()
+        markdown = pm.render(result, output_path=None, metadata=meta)
+        default_path = Path(pm._generate_filename(result))
+        default_path.write_text(markdown, encoding="utf-8")
+        out.print(f"[green]✔ Post-mortem saved to {default_path}[/green]")
 
 
 @history.command(name="search")

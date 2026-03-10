@@ -111,3 +111,11 @@ class HistoryAmbiguousMatchError(HistoryError):
             message=f"Multiple diagnoses match '{prefix}'.",
             hint="Use the full diagnosis ID.",
         )
+
+
+# --- Slack errors ---
+
+
+class SlackSendError(AutopsyError):
+    """Failed to post to Slack webhook."""
+
