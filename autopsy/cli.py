@@ -7,6 +7,8 @@ All business logic is delegated to config.py, diagnosis.py, and renderers.
 from __future__ import annotations
 
 import sys
+from datetime import datetime
+from pathlib import Path
 
 import click
 import yaml
@@ -313,3 +315,228 @@ def version() -> None:
     output.print(f"[bold]autopsy[/bold]  {__version__}")
     output.print(f"[bold]prompt[/bold]    {PROMPT_VERSION}")
     output.print(f"[bold]python[/bold]    {sys.version.split()[0]}")
+
+
+# ---------------------------------------------------------------------------
+# autopsy history
+# ---------------------------------------------------------------------------
+
+
+def _fmt_created_at(iso: str) -> str:
+    """Format ISO timestamp to `YYYY-MM-DD HH:MMZ` (best-effort)."""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%MZ")
+    except Exception:
+        return iso
+
+
+def _truncate(s: str, n: int) -> str:
+    s = s.strip()
+    return s if len(s) <= n else (s[: n - 1] + "…")
+
+
+@cli.group()
+def history() -> None:
+    """Browse past diagnoses."""
+
+
+@history.command(name="list")
+@click.option("--limit", "-n", default=20, show_default=True, help="Number of results")
+def history_list(limit: int) -> None:
+    """Show recent diagnoses."""
+    from autopsy.history import HistoryStore
+
+    out = Console()
+    with HistoryStore() as store:
+        rows = store.list_recent(limit=int(limit))
+
+    if not rows:
+        out.print("No diagnoses saved yet. Run 'autopsy diagnose' first.")
+        return
+
+    table = Table(title="Diagnosis History", show_header=True, header_style="bold")
+    table.add_column("#", style="dim", no_wrap=True)
+    table.add_column("ID", style="bold", no_wrap=True)
+    table.add_column("Date", style="dim", no_wrap=True)
+    table.add_column("Summary")
+    table.add_column("Category", no_wrap=True)
+    table.add_column("Confidence", justify="right", no_wrap=True)
+    table.add_column("Repo", style="dim")
+    table.add_column("Duration", justify="right", no_wrap=True)
+
+    for idx, r in enumerate(rows, start=1):
+        dur = f"{r.duration_s:.1f}s" if r.duration_s is not None else "—"
+        repo = r.github_repo or "—"
+        table.add_row(
+            str(idx),
+            r.id[:8],
+            _fmt_created_at(r.created_at),
+            _truncate(r.summary, 60),
+            r.category,
+            f"{r.confidence:.2f}",
+            repo,
+            dur,
+        )
+
+    out.print(table)
+
+
+@history.command(name="show")
+@click.argument("diagnosis_id")
+def history_show(diagnosis_id: str) -> None:
+    """Show full details of a past diagnosis."""
+    import json
+
+    from autopsy.ai.models import DiagnosisResult
+    from autopsy.history import HistoryStore
+    from autopsy.renderers.terminal import TerminalRenderer
+    from autopsy.utils.errors import HistoryAmbiguousMatchError, HistoryError
+
+    out = Console()
+    try:
+        with HistoryStore() as store:
+            row = store.get(diagnosis_id)
+    except HistoryAmbiguousMatchError as exc:
+        out.print(f'⚠ Multiple diagnoses match "{exc.prefix}":\n')
+        for c in exc.candidates:
+            short = str(c["id"])[:8]
+            date = _fmt_created_at(str(c.get("created_at", "")))
+            summary = _truncate(str(c.get("summary", "")), 80)
+            out.print(f"  {short}  {date}  {summary}")
+        out.print()
+        out.print("Use the full ID: autopsy history show <id>")
+        return
+    except HistoryError as exc:
+        out.print(f"[red]✘ {exc.message}[/red]")
+        if exc.hint:
+            out.print(f"[dim]{exc.hint}[/dim]")
+        return
+
+    if row is None:
+        out.print(f"No diagnosis found matching {diagnosis_id}.")
+        return
+
+    created_at = _fmt_created_at(str(row.get("created_at", "")))
+    duration = row.get("duration_s")
+    duration_s = f"{float(duration):.1f}s" if duration is not None else "—"
+    repo = row.get("github_repo") or "—"
+
+    raw = str(row.get("raw_json") or "{}")
+    try:
+        result = DiagnosisResult.model_validate(json.loads(raw))
+    except Exception:
+        # If raw_json is corrupted, still show something rather than crashing.
+        out.print("[red]✘ Saved diagnosis JSON is corrupted.[/red]")
+        return
+
+    out.print(f"Diagnosis from {created_at} ({duration_s}) — {repo}\n")
+    TerminalRenderer().render(result)
+
+
+@history.command(name="search")
+@click.argument("query")
+@click.option("--limit", "-n", default=20, show_default=True, help="Number of results")
+def history_search(query: str, limit: int) -> None:
+    """Search past diagnoses."""
+    from autopsy.history import HistoryStore
+
+    out = Console()
+    with HistoryStore() as store:
+        rows = store.search(query, limit=int(limit))
+
+    if not rows:
+        out.print("No matches.")
+        return
+
+    table = Table(title=f"Search: {query}", show_header=True, header_style="bold")
+    table.add_column("#", style="dim", no_wrap=True)
+    table.add_column("ID", style="bold", no_wrap=True)
+    table.add_column("Date", style="dim", no_wrap=True)
+    table.add_column("Summary")
+    table.add_column("Category", no_wrap=True)
+    table.add_column("Confidence", justify="right", no_wrap=True)
+    table.add_column("Repo", style="dim")
+    table.add_column("Duration", justify="right", no_wrap=True)
+
+    for idx, r in enumerate(rows, start=1):
+        dur = f"{r.duration_s:.1f}s" if r.duration_s is not None else "—"
+        repo = r.github_repo or "—"
+        table.add_row(
+            str(idx),
+            r.id[:8],
+            _fmt_created_at(r.created_at),
+            _truncate(r.summary, 60),
+            r.category,
+            f"{r.confidence:.2f}",
+            repo,
+            dur,
+        )
+
+    out.print(table)
+
+
+@history.command(name="stats")
+def history_stats() -> None:
+    """Show diagnosis statistics."""
+    from autopsy.history import HistoryStore
+
+    out = Console()
+    with HistoryStore() as store:
+        stats = store.get_stats()
+
+    if stats["total"] == 0:
+        out.print(Panel("No diagnoses saved yet.", title="History Stats", border_style="dim"))
+        return
+
+    total = int(stats["total"])
+    date_min = _fmt_created_at(str(stats["date_min"]))
+    date_max = _fmt_created_at(str(stats["date_max"]))
+    top_cat = stats.get("top_category") or "—"
+    top_cat_count = int(stats.get("top_category_count") or 0)
+    top_repo = stats.get("top_repo") or "—"
+    top_repo_count = int(stats.get("top_repo_count") or 0)
+    avg_conf = stats.get("avg_confidence")
+    avg_dur = stats.get("avg_duration_s")
+
+    cat_pct = (top_cat_count / total * 100.0) if total else 0.0
+
+    lines = [
+        f"Total diagnoses: {total}",
+        f"Date range: {date_min} → {date_max}",
+        f"Most common category: {top_cat} ({cat_pct:.0f}%)",
+        f"Average confidence: {(float(avg_conf) if avg_conf is not None else 0.0):.2f}"
+        if avg_conf is not None
+        else "Average confidence: —",
+        f"Most diagnosed repo: {top_repo} ({top_repo_count})",
+        f"Average diagnosis time: {(float(avg_dur) if avg_dur is not None else 0.0):.1f}s"
+        if avg_dur is not None
+        else "Average diagnosis time: —",
+    ]
+    out.print(Panel("\n".join(lines), title="History Stats", border_style="cyan"))
+
+
+@history.command(name="clear")
+@click.confirmation_option(prompt="Delete all diagnosis history?")
+def history_clear() -> None:
+    """Delete all saved diagnoses."""
+    from autopsy.history import HistoryStore
+
+    out = Console()
+    with HistoryStore() as store:
+        n = store.clear()
+    out.print(f"Cleared {n} diagnoses.")
+
+
+@history.command(name="export")
+@click.argument("path", type=click.Path())
+@click.option("--format", "fmt", type=click.Choice(["json", "csv"]), default="json")
+def history_export(path: str, fmt: str) -> None:
+    """Export history to file."""
+    from autopsy.history import HistoryStore
+
+    out = Console()
+    export_path = Path(path)
+    with HistoryStore() as store:
+        n = store.export(export_path, fmt=fmt)
+    out.print(f"Exported {n} diagnoses to {export_path}.")

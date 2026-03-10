@@ -7,6 +7,7 @@ the structured result. Rendering is the caller's responsibility.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from autopsy.ai.engine import AIEngine
@@ -58,6 +59,7 @@ class DiagnosisOrchestrator:
             CollectorError: On data collection failure.
             AIError: On AI provider failure.
         """
+        start = time.monotonic()
         # Effective config: start from loaded config, apply overrides
         aws_dict = self.config.aws.model_dump()
         if time_window is not None:
@@ -105,4 +107,24 @@ class DiagnosisOrchestrator:
             max_tokens=self.config.ai.max_tokens,
             temperature=self.config.ai.temperature,
         )
-        return engine.diagnose(collected)
+        result = engine.diagnose(collected)
+        duration_s = time.monotonic() - start
+
+        # Best-effort history save: never block diagnosis output
+        try:
+            from autopsy.history import HistoryStore
+
+            with HistoryStore() as store:
+                store.save(
+                    result=result,
+                    duration_s=round(duration_s, 2),
+                    log_groups=list(aws_dict.get("log_groups", [])),
+                    github_repo=self.config.github.repo,
+                    provider=ai_provider,
+                    model=model,
+                    time_window=int(aws_dict.get("time_window", 0)),
+                )
+        except Exception:
+            pass
+
+        return result
