@@ -6,10 +6,9 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from click.testing import CliRunner
 
+import autopsy.config as config_module
 from autopsy.cli import cli
 from autopsy.config import (
-    CONFIG_PATH,
-    ENV_FILE,
     AIConfig,
     AutopsyConfig,
     AWSConfig,
@@ -70,7 +69,7 @@ def test_init_slack_updates_env_and_config(
 ) -> None:
     # Prepare an existing config
     cfg = _minimal_config_with_slack()
-    save_config(cfg, CONFIG_PATH)
+    save_config(cfg, config_module.CONFIG_PATH)
 
     dummy_renderer = _DummySlackRenderer("https://hooks.slack.test/url")
 
@@ -93,11 +92,11 @@ def test_init_slack_updates_env_and_config(
     assert len(dummy_renderer.render_calls) == 1
 
     # .env should contain the webhook URL
-    env_text = ENV_FILE.read_text(encoding="utf-8")
+    env_text = config_module.ENV_FILE.read_text(encoding="utf-8")
     assert "AUTOPSY_SLACK_WEBHOOK=https://hooks.slack.test/url" in env_text
 
     # Config should include a slack section with enabled=True
-    new_cfg_raw = CONFIG_PATH.read_text(encoding="utf-8")
+    new_cfg_raw = config_module.CONFIG_PATH.read_text(encoding="utf-8")
     assert "slack:" in new_cfg_raw
     assert "enabled: true" in new_cfg_raw
 
@@ -110,13 +109,26 @@ def test_config_validate_includes_slack(
     from autopsy.config import validate_config
 
     cfg = _minimal_config_with_slack()
-    save_config(cfg, CONFIG_PATH)
+    save_config(cfg, config_module.CONFIG_PATH)
     monkeypatch.setenv("AUTOPSY_SLACK_WEBHOOK", "https://hooks.slack.test/url", prepend=False)
 
     status = validate_config(cfg)
     assert "slack" in status
     assert status["slack"]["configured"] is True
     assert status["slack"]["channel"] == "#incidents"
+
+    # Make CLI validate deterministic and independent from local AWS/token setup.
+    monkeypatch.setattr("autopsy.config.load_config", lambda: cfg)
+    monkeypatch.setattr(
+        "autopsy.config.validate_config",
+        lambda _cfg: {
+            "github_token": {"set": True, "source": "environment"},
+            "anthropic_key": {"set": True, "source": "environment", "primary": True},
+            "openai_key": {"set": False, "source": "not set", "primary": False},
+            "aws": {"found": True, "source": "profile 'default'"},
+            "slack": {"configured": True, "channel": "#incidents", "source": "environment"},
+        },
+    )
 
     runner = CliRunner()
     result = runner.invoke(config_validate, [], catch_exceptions=False)
