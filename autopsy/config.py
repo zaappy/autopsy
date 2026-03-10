@@ -121,6 +121,14 @@ class OutputConfig(BaseModel):
     verbosity: str = Field(default="normal", pattern=r"^(quiet|normal|verbose)$")
 
 
+class SlackConfig(BaseModel):
+    """Slack integration configuration (optional)."""
+
+    webhook_url_env: str = "AUTOPSY_SLACK_WEBHOOK"
+    channel: str = "#incidents"
+    enabled: bool = True
+
+
 class AutopsyConfig(BaseModel):
     """Top-level configuration model for ~/.autopsy/config.yaml."""
 
@@ -129,6 +137,7 @@ class AutopsyConfig(BaseModel):
     github: GitHubConfig
     ai: AIConfig = Field(default_factory=AIConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
+    slack: "SlackConfig | None" = None
 
     @model_validator(mode="after")
     def _validate_env_var_names(self) -> AutopsyConfig:

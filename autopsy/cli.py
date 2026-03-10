@@ -6,6 +6,7 @@ All business logic is delegated to config.py, diagnosis.py, and renderers.
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +33,15 @@ def _handle_error(err: AutopsyError) -> None:
         text.append(f"\nDocs: {err.docs_url}\n", style="dim")
     console.print(Panel(text, border_style="red"))
     sys.exit(1)
+
+
+def _resolve_slack_webhook(cfg) -> str:
+    """Resolve Slack webhook URL from config/env. Returns empty string if unavailable."""
+    slack_cfg = getattr(cfg, "slack", None)
+    if not slack_cfg or not slack_cfg.enabled:
+        return ""
+    env_name = slack_cfg.webhook_url_env or "AUTOPSY_SLACK_WEBHOOK"
+    return os.environ.get(env_name, "")
 
 
 def _print_version(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
@@ -112,6 +122,11 @@ def init() -> None:
     type=click.Path(),
     help="Output path for post-mortem (default: ./postmortem-{date}.md)",
 )
+@click.option(
+    "--slack",
+    is_flag=True,
+    help="Post diagnosis to Slack.",
+)
 def diagnose(
     time_window: int | None,
     log_groups: tuple[str, ...],
@@ -120,6 +135,7 @@ def diagnose(
     verbose: bool,
     postmortem: bool,
     postmortem_path: str | None,
+    slack: bool,
 ) -> None:
     """Run AI-powered incident diagnosis."""
     from autopsy.config import load_config
@@ -190,6 +206,23 @@ def diagnose(
             default_path = Path(pm._generate_filename(result))
             default_path.write_text(markdown, encoding="utf-8")
             console.print(f"[green]✔ Post-mortem saved to {default_path}[/green]")
+
+    if slack:
+        webhook_url = _resolve_slack_webhook(cfg)
+        if webhook_url:
+            from autopsy.renderers.slack import SlackRenderer
+
+            slack_renderer = SlackRenderer(webhook_url)
+            try:
+                slack_renderer.render(result)
+                console.print("[green]✔ Diagnosis posted to Slack[/green]")
+            except AutopsyError as exc:
+                console.print(f"[yellow]⚠ Slack failed: {exc.message}[/yellow]")
+        else:
+            console.print(
+                "[yellow]⚠ Slack not configured. "
+                "Set AUTOPSY_SLACK_WEBHOOK in your environment or config.[/yellow]"
+            )
 
 
 # ---------------------------------------------------------------------------
