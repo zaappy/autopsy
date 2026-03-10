@@ -9,15 +9,20 @@ from __future__ import annotations
 import csv
 import json
 import sqlite3
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any
 
-from autopsy.ai.models import DiagnosisResult
 from autopsy.config import CONFIG_DIR
 from autopsy.utils.errors import HistoryAmbiguousMatchError, HistoryError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
+
+    from autopsy.ai.models import DiagnosisResult
 
 DB_PATH = CONFIG_DIR / "history.db"
 
@@ -92,6 +97,7 @@ class HistoryStore:
     def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = db_path or DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
         try:
             self._conn = sqlite3.connect(
                 str(self.db_path),
@@ -116,9 +122,10 @@ class HistoryStore:
 
     def _apply_pragmas(self) -> None:
         try:
-            self._conn.execute("PRAGMA journal_mode=WAL;")
-            self._conn.execute("PRAGMA synchronous=NORMAL;")
-            self._conn.execute("PRAGMA foreign_keys=ON;")
+            with self._lock:
+                self._conn.execute("PRAGMA journal_mode=WAL;")
+                self._conn.execute("PRAGMA synchronous=NORMAL;")
+                self._conn.execute("PRAGMA foreign_keys=ON;")
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to initialize history database settings.",
@@ -127,8 +134,9 @@ class HistoryStore:
 
     def _create_tables(self) -> None:
         try:
-            self._conn.executescript(_SCHEMA)
-            self._conn.commit()
+            with self._lock:
+                self._conn.executescript(_SCHEMA)
+                self._conn.commit()
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to create history database schema.",
@@ -180,30 +188,32 @@ class HistoryStore:
             row = {"id": diagnosis_id, "created_at": created_at, **base_row}
 
             try:
-                self._conn.execute(
-                    """
-                    INSERT INTO diagnoses (
-                        id, created_at, duration_s,
-                        summary, category, confidence, evidence,
-                        commit_sha, commit_author, pr_title, changed_files,
-                        fix_immediate, fix_long_term,
-                        timeline,
-                        log_groups, github_repo, provider, model, prompt_version, time_window,
-                        raw_json
+                with self._lock:
+                    self._conn.execute(
+                        """
+                        INSERT INTO diagnoses (
+                            id, created_at, duration_s,
+                            summary, category, confidence, evidence,
+                            commit_sha, commit_author, pr_title, changed_files,
+                            fix_immediate, fix_long_term,
+                            timeline,
+                            log_groups, github_repo, provider, model, prompt_version, time_window,
+                            raw_json
+                        )
+                        VALUES (
+                            :id, :created_at, :duration_s,
+                            :summary, :category, :confidence, :evidence,
+                            :commit_sha, :commit_author, :pr_title, :changed_files,
+                            :fix_immediate, :fix_long_term,
+                            :timeline,
+                            :log_groups, :github_repo, :provider, :model,
+                            :prompt_version, :time_window,
+                            :raw_json
+                        )
+                        """,
+                        row,
                     )
-                    VALUES (
-                        :id, :created_at, :duration_s,
-                        :summary, :category, :confidence, :evidence,
-                        :commit_sha, :commit_author, :pr_title, :changed_files,
-                        :fix_immediate, :fix_long_term,
-                        :timeline,
-                        :log_groups, :github_repo, :provider, :model, :prompt_version, :time_window,
-                        :raw_json
-                    )
-                    """,
-                    row,
-                )
-                self._conn.commit()
+                    self._conn.commit()
                 return diagnosis_id
             except sqlite3.IntegrityError as exc:
                 # Extremely rare UUID collision or race; retry with a new UUID.
@@ -224,16 +234,25 @@ class HistoryStore:
     def list_recent(self, *, limit: int = 20, offset: int = 0) -> list[DiagnosisSummaryRow]:
         """Return recent diagnoses, newest first. Summary view."""
         try:
-            cur = self._conn.execute(
-                """
-                SELECT id, created_at, summary, category, confidence, commit_sha, github_repo, duration_s
-                FROM diagnoses
-                ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
-                """,
-                (int(limit), int(offset)),
-            )
-            rows = cur.fetchall()
+            with self._lock:
+                cur = self._conn.execute(
+                    """
+                    SELECT
+                        id,
+                        created_at,
+                        summary,
+                        category,
+                        confidence,
+                        commit_sha,
+                        github_repo,
+                        duration_s
+                    FROM diagnoses
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (int(limit), int(offset)),
+                )
+                rows = cur.fetchall()
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to list diagnosis history.",
@@ -265,8 +284,9 @@ class HistoryStore:
             return None
 
         try:
-            cur = self._conn.execute("SELECT * FROM diagnoses WHERE id = ?", (resolved,))
-            row = cur.fetchone()
+            with self._lock:
+                cur = self._conn.execute("SELECT * FROM diagnoses WHERE id = ?", (resolved,))
+                row = cur.fetchone()
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to read diagnosis history.",
@@ -286,17 +306,18 @@ class HistoryStore:
 
         prefix = diagnosis_id
         try:
-            cur = self._conn.execute(
-                """
-                SELECT id, created_at, summary
-                FROM diagnoses
-                WHERE id LIKE ? || '%'
-                ORDER BY created_at DESC
-                LIMIT 50
-                """,
-                (prefix,),
-            )
-            rows = cur.fetchall()
+            with self._lock:
+                cur = self._conn.execute(
+                    """
+                    SELECT id, created_at, summary
+                    FROM diagnoses
+                    WHERE id LIKE ? || '%'
+                    ORDER BY created_at DESC
+                    LIMIT 50
+                    """,
+                    (prefix,),
+                )
+                rows = cur.fetchall()
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to resolve diagnosis ID.",
@@ -318,20 +339,29 @@ class HistoryStore:
         """Search across summary, evidence, pr_title, commit_author (SQL LIKE)."""
         q = f"%{query.strip()}%"
         try:
-            cur = self._conn.execute(
-                """
-                SELECT id, created_at, summary, category, confidence, commit_sha, github_repo, duration_s
-                FROM diagnoses
-                WHERE summary LIKE ?
-                   OR evidence LIKE ?
-                   OR pr_title LIKE ?
-                   OR commit_author LIKE ?
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (q, q, q, q, int(limit)),
-            )
-            rows = cur.fetchall()
+            with self._lock:
+                cur = self._conn.execute(
+                    """
+                    SELECT
+                        id,
+                        created_at,
+                        summary,
+                        category,
+                        confidence,
+                        commit_sha,
+                        github_repo,
+                        duration_s
+                    FROM diagnoses
+                    WHERE summary LIKE ?
+                       OR evidence LIKE ?
+                       OR pr_title LIKE ?
+                       OR commit_author LIKE ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                    """,
+                    (q, q, q, q, int(limit)),
+                )
+                rows = cur.fetchall()
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to search diagnosis history.",
@@ -355,7 +385,9 @@ class HistoryStore:
     def get_stats(self) -> dict[str, Any]:
         """Return stats for UI/CLI presentation."""
         try:
-            total = int(self._conn.execute("SELECT COUNT(*) AS c FROM diagnoses").fetchone()["c"])
+            with self._lock:
+                total_row = self._conn.execute("SELECT COUNT(*) AS c FROM diagnoses").fetchone()
+                total = int(total_row["c"])
             if total == 0:
                 return {
                     "total": 0,
@@ -369,30 +401,31 @@ class HistoryStore:
                     "top_repo_count": 0,
                 }
 
-            date_row = self._conn.execute(
-                "SELECT MIN(created_at) AS min_dt, MAX(created_at) AS max_dt FROM diagnoses"
-            ).fetchone()
-            avg_row = self._conn.execute(
-                "SELECT AVG(confidence) AS avg_conf, AVG(duration_s) AS avg_dur FROM diagnoses"
-            ).fetchone()
-            cat_row = self._conn.execute(
-                """
-                SELECT category, COUNT(*) AS c
-                FROM diagnoses
-                GROUP BY category
-                ORDER BY c DESC
-                LIMIT 1
-                """
-            ).fetchone()
-            repo_row = self._conn.execute(
-                """
-                SELECT github_repo, COUNT(*) AS c
-                FROM diagnoses
-                GROUP BY github_repo
-                ORDER BY c DESC
-                LIMIT 1
-                """
-            ).fetchone()
+            with self._lock:
+                date_row = self._conn.execute(
+                    "SELECT MIN(created_at) AS min_dt, MAX(created_at) AS max_dt FROM diagnoses"
+                ).fetchone()
+                avg_row = self._conn.execute(
+                    "SELECT AVG(confidence) AS avg_conf, AVG(duration_s) AS avg_dur FROM diagnoses"
+                ).fetchone()
+                cat_row = self._conn.execute(
+                    """
+                    SELECT category, COUNT(*) AS c
+                    FROM diagnoses
+                    GROUP BY category
+                    ORDER BY c DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                repo_row = self._conn.execute(
+                    """
+                    SELECT github_repo, COUNT(*) AS c
+                    FROM diagnoses
+                    GROUP BY github_repo
+                    ORDER BY c DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to compute history statistics.",
@@ -403,8 +436,12 @@ class HistoryStore:
             "total": total,
             "date_min": str(date_row["min_dt"]),
             "date_max": str(date_row["max_dt"]),
-            "avg_confidence": (float(avg_row["avg_conf"]) if avg_row["avg_conf"] is not None else None),
-            "avg_duration_s": (float(avg_row["avg_dur"]) if avg_row["avg_dur"] is not None else None),
+            "avg_confidence": (
+                float(avg_row["avg_conf"]) if avg_row["avg_conf"] is not None else None
+            ),
+            "avg_duration_s": (
+                float(avg_row["avg_dur"]) if avg_row["avg_dur"] is not None else None
+            ),
             "top_category": (str(cat_row["category"]) if cat_row else None),
             "top_category_count": (int(cat_row["c"]) if cat_row else 0),
             "top_repo": (str(repo_row["github_repo"]) if repo_row else None),
@@ -417,9 +454,10 @@ class HistoryStore:
         if resolved is None:
             return False
         try:
-            cur = self._conn.execute("DELETE FROM diagnoses WHERE id = ?", (resolved,))
-            self._conn.commit()
-            return cur.rowcount == 1
+            with self._lock:
+                cur = self._conn.execute("DELETE FROM diagnoses WHERE id = ?", (resolved,))
+                self._conn.commit()
+                return cur.rowcount == 1
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to delete diagnosis from history.",
@@ -429,9 +467,10 @@ class HistoryStore:
     def clear(self) -> int:
         """Delete all history. Returns count deleted."""
         try:
-            cur = self._conn.execute("DELETE FROM diagnoses")
-            self._conn.commit()
-            return int(cur.rowcount)
+            with self._lock:
+                cur = self._conn.execute("DELETE FROM diagnoses")
+                self._conn.commit()
+                return int(cur.rowcount)
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to clear history database.",
@@ -445,8 +484,9 @@ class HistoryStore:
             raise HistoryError(message=f"Unsupported export format: {fmt}", hint="Use json or csv.")
 
         try:
-            cur = self._conn.execute("SELECT * FROM diagnoses ORDER BY created_at DESC")
-            rows = [dict(r) for r in cur.fetchall()]
+            with self._lock:
+                cur = self._conn.execute("SELECT * FROM diagnoses ORDER BY created_at DESC")
+                rows = [dict(r) for r in cur.fetchall()]
         except sqlite3.Error as exc:
             raise HistoryError(
                 message="Failed to export history.",
@@ -493,7 +533,8 @@ class HistoryStore:
     def close(self) -> None:
         """Close the DB connection."""
         try:
-            self._conn.close()
+            with self._lock:
+                self._conn.close()
         except sqlite3.Error:
             # Close should never raise to callers.
             return

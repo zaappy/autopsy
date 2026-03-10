@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 import threading
-from pathlib import Path
 from time import sleep
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -18,8 +17,12 @@ from autopsy.ai.models import (
     TimelineEvent,
 )
 from autopsy.config import AIConfig, AutopsyConfig, AWSConfig, GitHubConfig, OutputConfig
-from autopsy.history import DB_PATH, HistoryStore
+from autopsy.history import HistoryStore
 from autopsy.utils.errors import HistoryAmbiguousMatchError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 
 def _minimal_config() -> AutopsyConfig:
@@ -235,7 +238,9 @@ def test_search_by_summary_and_author_and_no_matches(tmp_path: Path) -> None:
     db = tmp_path / "history.db"
     with HistoryStore(db_path=db) as store:
         store.save(
-            result=_sample_result(summary="NullPointerException in handler", author="alice@example.com"),
+            result=_sample_result(
+                summary="NullPointerException in handler", author="alice@example.com"
+            ),
             duration_s=1.0,
             log_groups=["/aws/lambda/test"],
             github_repo="owner/repo",
@@ -312,7 +317,7 @@ def test_delete_and_clear(tmp_path: Path) -> None:
             model="claude-sonnet-4-20250514",
             time_window=30,
         )
-        id2 = store.save(
+        store.save(
             result=_sample_result(summary="Keep until clear"),
             duration_s=1.0,
             log_groups=["/aws/lambda/test"],
@@ -436,7 +441,9 @@ def test_history_save_failure_does_not_break_pipeline(monkeypatch: pytest.Monkey
 
 
 class TestHistoryCLI:
-    def test_history_list_empty_and_non_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_history_list_empty_and_non_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from click.testing import CliRunner
 
         from autopsy.cli import cli
@@ -466,7 +473,9 @@ class TestHistoryCLI:
         assert result.exit_code == 0
         assert "Diagnosis History" in result.output
 
-    def test_history_show_ambiguous_prefix_message(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_history_show_ambiguous_prefix_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from click.testing import CliRunner
 
         from autopsy.cli import cli
