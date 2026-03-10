@@ -147,16 +147,11 @@ class HistoryStore:
         time_window: int,
     ) -> str:
         """Save a diagnosis. Returns the generated UUID."""
-        diagnosis_id = str(uuid.uuid4())
-        created_at = _utc_now_iso()
-
         rc = result.root_cause
         cd = result.correlated_deploy
         sf = result.suggested_fix
 
-        row = {
-            "id": diagnosis_id,
-            "created_at": created_at,
+        base_row = {
             "duration_s": float(duration_s),
             "summary": rc.summary,
             "category": rc.category,
@@ -178,38 +173,53 @@ class HistoryStore:
             "raw_json": result.model_dump_json(),
         }
 
-        try:
-            self._conn.execute(
-                """
-                INSERT INTO diagnoses (
-                    id, created_at, duration_s,
-                    summary, category, confidence, evidence,
-                    commit_sha, commit_author, pr_title, changed_files,
-                    fix_immediate, fix_long_term,
-                    timeline,
-                    log_groups, github_repo, provider, model, prompt_version, time_window,
-                    raw_json
-                )
-                VALUES (
-                    :id, :created_at, :duration_s,
-                    :summary, :category, :confidence, :evidence,
-                    :commit_sha, :commit_author, :pr_title, :changed_files,
-                    :fix_immediate, :fix_long_term,
-                    :timeline,
-                    :log_groups, :github_repo, :provider, :model, :prompt_version, :time_window,
-                    :raw_json
-                )
-                """,
-                row,
-            )
-            self._conn.commit()
-        except sqlite3.Error as exc:
-            raise HistoryError(
-                message="Failed to save diagnosis history.",
-                hint="Check disk space and database permissions.",
-            ) from exc
+        last_error: sqlite3.Error | None = None
+        for _ in range(3):
+            diagnosis_id = str(uuid.uuid4())
+            created_at = _utc_now_iso()
+            row = {"id": diagnosis_id, "created_at": created_at, **base_row}
 
-        return diagnosis_id
+            try:
+                self._conn.execute(
+                    """
+                    INSERT INTO diagnoses (
+                        id, created_at, duration_s,
+                        summary, category, confidence, evidence,
+                        commit_sha, commit_author, pr_title, changed_files,
+                        fix_immediate, fix_long_term,
+                        timeline,
+                        log_groups, github_repo, provider, model, prompt_version, time_window,
+                        raw_json
+                    )
+                    VALUES (
+                        :id, :created_at, :duration_s,
+                        :summary, :category, :confidence, :evidence,
+                        :commit_sha, :commit_author, :pr_title, :changed_files,
+                        :fix_immediate, :fix_long_term,
+                        :timeline,
+                        :log_groups, :github_repo, :provider, :model, :prompt_version, :time_window,
+                        :raw_json
+                    )
+                    """,
+                    row,
+                )
+                self._conn.commit()
+                return diagnosis_id
+            except sqlite3.IntegrityError as exc:
+                # Extremely rare UUID collision or race; retry with a new UUID.
+                last_error = exc
+                continue
+            except sqlite3.Error as exc:
+                raise HistoryError(
+                    message="Failed to save diagnosis history.",
+                    hint="Check disk space and database permissions.",
+                ) from exc
+
+        # If we exhausted retries on IntegrityError, surface as HistoryError.
+        raise HistoryError(
+            message="Failed to save diagnosis history after multiple attempts.",
+            hint="Check for database corruption or remove ~/.autopsy/history.db.",
+        ) from last_error
 
     def list_recent(self, *, limit: int = 20, offset: int = 0) -> list[DiagnosisSummaryRow]:
         """Return recent diagnoses, newest first. Summary view."""
