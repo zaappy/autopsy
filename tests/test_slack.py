@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
+import urllib.request
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-
-import urllib.request
 
 from autopsy.ai.models import (
     CorrelatedDeploy,
@@ -15,7 +14,14 @@ from autopsy.ai.models import (
     SuggestedFix,
     TimelineEvent,
 )
-from autopsy.config import AIConfig, AutopsyConfig, AWSConfig, GitHubConfig, OutputConfig, SlackConfig
+from autopsy.config import (
+    AIConfig,
+    AutopsyConfig,
+    AWSConfig,
+    GitHubConfig,
+    OutputConfig,
+    SlackConfig,
+)
 from autopsy.renderers.slack import SlackRenderer
 from autopsy.utils.errors import SlackSendError
 
@@ -145,7 +151,7 @@ def test_render_raises_on_non_200_response(mock_urlopen: MagicMock) -> None:
     except SlackSendError as exc:
         assert "non-200" in exc.message
     else:
-        assert False, "SlackSendError was not raised"
+        raise AssertionError("SlackSendError was not raised")
 
 
 @patch("urllib.request.urlopen")
@@ -158,7 +164,7 @@ def test_render_raises_slack_send_error_on_network_failure(mock_urlopen: MagicMo
     except SlackSendError as exc:
         assert "Failed to send to Slack" in exc.message
     else:
-        assert False, "SlackSendError was not raised"
+        raise AssertionError("SlackSendError was not raised")
 
 
 def _minimal_config_with_slack() -> AutopsyConfig:
@@ -172,7 +178,11 @@ def _minimal_config_with_slack() -> AutopsyConfig:
         ),
         ai=AIConfig(provider="anthropic", model="claude-sonnet-4-20250514"),
         output=OutputConfig(),
-        slack=SlackConfig(webhook_url_env="AUTOPSY_SLACK_WEBHOOK", channel="#incidents", enabled=True),
+        slack=SlackConfig(
+            webhook_url_env="AUTOPSY_SLACK_WEBHOOK",
+            channel="#incidents",
+            enabled=True,
+        ),
     )
 
 
@@ -207,7 +217,7 @@ def test_cli_diagnose_slack_flag_posts_to_slack(
 ) -> None:
     from click.testing import CliRunner
 
-    from autopsy.cli import cli, _resolve_slack_webhook
+    from autopsy.cli import cli
 
     cfg = _minimal_config_with_slack()
     mock_load_config.return_value = cfg

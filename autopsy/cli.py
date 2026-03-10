@@ -86,12 +86,20 @@ def cli(ctx: click.Context) -> None:
 
 
 @cli.command()
-def init() -> None:
+@click.option(
+    "--slack",
+    is_flag=True,
+    help="Configure only Slack integration (requires existing config).",
+)
+def init(slack: bool) -> None:
     """Interactive configuration wizard. Creates ~/.autopsy/config.yaml."""
-    from autopsy.config import init_wizard
+    from autopsy.config import init_slack_only, init_wizard
 
     try:
-        init_wizard()
+        if slack:
+            init_slack_only()
+        else:
+            init_wizard()
     except AutopsyError as exc:
         _handle_error(exc)
 
@@ -367,6 +375,14 @@ def config_validate() -> None:
     else:
         table.add_row("AWS Credentials", "[red]✘ Not found[/red]", aws["source"])
         all_ok = False
+
+    # Slack (optional)
+    slack = status.get("slack", {"configured": False, "channel": "", "source": "not set"})
+    if slack["configured"]:
+        chan = slack.get("channel") or "unknown"
+        table.add_row("Slack", "[green]✔[/green]", f"channel {chan}")
+    else:
+        table.add_row("Slack", "[yellow]⚠ not configured[/yellow]", "optional")
 
     output = Console()
     if ENV_FILE.exists():

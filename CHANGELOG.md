@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-03-10
+
+### Added
+
+- Diagnosis history retention with local SQLite storage and CLI commands:
+  `autopsy history list|show|search|stats|clear|export`.
+- Markdown post-mortem generation via `autopsy diagnose --postmortem` and
+  `autopsy history show <id> --postmortem`.
+- Slack webhook output via `autopsy diagnose --slack`.
+- Slack-only setup flow via `autopsy init --slack`.
+
+### Changed
+
+- `autopsy config validate` now includes optional Slack configuration status.
+- Interactive menu labels now include Slack in setup/validation descriptions.
+- Runtime package version alignment for CLI and renderer outputs.
+
 ## [0.2.1] - 2026-03-09
 
 ### Changed
@@ -27,5 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 [Unreleased]: https://github.com/zaappy/autopsy/compare/main...HEAD
+[0.2.2]: https://github.com/zaappy/autopsy/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/zaappy/autopsy/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/zaappy/autopsy/releases/tag/v0.2.0

@@ -82,8 +82,8 @@ def run_interactive() -> None:
     choices = [
         "Diagnose  — Pull logs + deploys → AI root cause",
         "History   — View diagnosis history",
-        "Setup     — Interactive wizard (AWS, GitHub, AI)",
-        "Validate  — Test credentials and connectivity",
+        "Setup     — Interactive wizard (AWS, GitHub, AI, Slack)",
+        "Validate  — Test credentials and connectivity (AWS, GitHub, AI, Slack)",
         "Show config — Current config (secrets masked)",
         "Quit",
     ]
