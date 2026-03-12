@@ -12,12 +12,13 @@ from typing import TYPE_CHECKING
 
 from autopsy.ai.engine import AIEngine
 from autopsy.collectors.cloudwatch import CloudWatchCollector
+from autopsy.collectors.datadog import DatadogCollector
 from autopsy.collectors.github import GitHubCollector
 from autopsy.config import AutopsyConfig  # noqa: TC001 — used at runtime for __init__
 
 if TYPE_CHECKING:
     from autopsy.ai.models import DiagnosisResult
-    from autopsy.collectors.base import CollectedData
+    from autopsy.collectors.base import BaseCollector, CollectedData
 
 
 class DiagnosisOrchestrator:
@@ -30,6 +31,22 @@ class DiagnosisOrchestrator:
             config: Validated AutopsyConfig from config.py.
         """
         self.config = config
+
+    def _get_collectors(self) -> list[BaseCollector]:
+        """Instantiate collectors based on config."""
+        collectors: list[BaseCollector] = []
+        if self.config.aws:
+            cw = CloudWatchCollector()
+            setattr(cw, "_autopsy_role", "cloudwatch")
+            collectors.append(cw)
+        if getattr(self.config, "datadog", None) is not None:
+            dd = DatadogCollector()
+            setattr(dd, "_autopsy_role", "datadog")
+            collectors.append(dd)
+        gh = GitHubCollector()
+        setattr(gh, "_autopsy_role", "github")
+        collectors.append(gh)
+        return collectors
 
     def run(
         self,
@@ -67,6 +84,14 @@ class DiagnosisOrchestrator:
         if log_groups is not None:
             aws_dict["log_groups"] = list(log_groups)
 
+        datadog_dict: dict | None = None
+        if getattr(self.config, "datadog", None) is not None:
+            datadog_dict = self.config.datadog.model_dump()
+            # If no explicit Datadog time_window override, align with AWS
+            datadog_dict.setdefault("time_window", aws_dict.get("time_window", 30))
+            if time_window is not None:
+                datadog_dict["time_window"] = time_window
+
         ai_provider = provider if provider is not None else self.config.ai.provider
         api_key = self.config.ai.get_active_api_key(provider=ai_provider)
         if not api_key:
@@ -83,16 +108,20 @@ class DiagnosisOrchestrator:
                 hint=f"Run 'autopsy init' or export {env_name}.",
             )
 
-        # Validate collectors
-        cw = CloudWatchCollector()
-        gh = GitHubCollector()
-        cw.validate_config(aws_dict)
-        gh.validate_config(self.config.github.model_dump())
-
-        # Collect
+        # Validate collectors & collect
         collected: list[CollectedData] = []
-        collected.append(cw.collect(aws_dict))
-        collected.append(gh.collect(self.config.github.model_dump()))
+        for collector in self._get_collectors():
+            role = getattr(collector, "_autopsy_role", "")
+            if role == "cloudwatch":
+                cfg = aws_dict
+            elif role == "datadog":
+                if datadog_dict is None:
+                    continue
+                cfg = datadog_dict
+            else:  # github
+                cfg = self.config.github.model_dump()
+            collector.validate_config(cfg)
+            collected.append(collector.collect(cfg))
 
         # AI engine
         model = (

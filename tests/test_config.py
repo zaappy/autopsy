@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from autopsy.config import (
     AIConfig,
     AutopsyConfig,
+    DatadogConfig,
     _write_env_file,
     load_config,
     load_env,
@@ -70,6 +71,7 @@ class TestAutopsyConfig:
         assert cfg.github.deploy_count == 5
         assert cfg.ai.temperature == 0.2
         assert cfg.output.verbosity == "normal"
+        assert cfg.datadog is None
 
     def test_invalid_region_rejected(self) -> None:
         data = _minimal_config_dict()
@@ -128,6 +130,21 @@ class TestAutopsyConfig:
         data["ai"] = {"provider": "openai"}
         cfg = AutopsyConfig(**data)
         assert cfg.ai.provider == "openai"
+
+    def test_datadog_optional_and_defaults(self) -> None:
+        data = _minimal_config_dict()
+        data["datadog"] = {}
+        cfg = AutopsyConfig(**data)
+        assert cfg.datadog is not None
+        assert cfg.datadog.api_key_env == "DD_API_KEY"
+        assert cfg.datadog.app_key_env == "DD_APP_KEY"
+        assert cfg.datadog.site == "us1"
+
+    def test_invalid_datadog_site_rejected(self) -> None:
+        data = _minimal_config_dict()
+        data["datadog"] = {"site": "invalid"}
+        with pytest.raises(ValidationError):
+            AutopsyConfig(**data)
 
 
 # ---------------------------------------------------------------------------
