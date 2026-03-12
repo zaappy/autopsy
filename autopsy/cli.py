@@ -156,6 +156,8 @@ def diagnose(
     except AutopsyError as exc:
         _handle_error(exc)
 
+    console.print("[green]✔[/green] Config loaded")
+
     overrides: dict[str, object] = {}
     if time_window is not None:
         overrides["time_window"] = time_window
@@ -180,12 +182,14 @@ def diagnose(
         import time as _time
 
         start = _time.monotonic()
-        result = orchestrator.run(
-            time_window=overrides.get("time_window"),
-            log_groups=overrides.get("log_groups"),
-            provider=ai_provider_str,
-        )
+        with console.status("[bold]Running diagnosis pipeline...[/bold]"):
+            result = orchestrator.run(
+                time_window=overrides.get("time_window"),
+                log_groups=overrides.get("log_groups"),
+                provider=ai_provider_str,
+            )
         duration_s = round(_time.monotonic() - start, 2)
+        console.print(f"[green]✔[/green] Diagnosis complete ({duration_s}s)\n")
     except AutopsyError as exc:
         _handle_error(exc)
 
