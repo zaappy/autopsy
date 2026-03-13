@@ -12,6 +12,7 @@
 [![CI](https://github.com/zaappy/autopsy/actions/workflows/ci.yml/badge.svg)](https://github.com/zaappy/autopsy/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/autopsy-cli.svg)](https://pypi.org/project/autopsy-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Hits](https://visitor-badge.laobi.icu/badge?page_id=zaappy.autopsy)](https://github.com/zaappy/autopsy)
 
 **AI-powered incident diagnosis for engineering teams.** Pull production error logs and recent deploys, send them to an LLM, and get a structured root cause analysis in the terminal in under a minute. Zero-trust: your data never leaves your environment.
 
