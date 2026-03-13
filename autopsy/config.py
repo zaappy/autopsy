@@ -90,6 +90,26 @@ class GitHubConfig(BaseModel):
         return v
 
 
+class DatadogConfig(BaseModel):
+    """Datadog-specific configuration (optional)."""
+
+    api_key_env: str = "DD_API_KEY"
+    app_key_env: str = "DD_APP_KEY"
+    site: str = "us1"
+    service: str | None = None
+    source: str | None = None
+    time_window: int = 30
+
+    @field_validator("site")
+    @classmethod
+    def validate_site(cls, v: str) -> str:
+        valid = {"us1", "eu1", "us3", "us5", "ap1"}
+        if v not in valid:
+            msg = f"Invalid Datadog site: {v}. Must be one of: {', '.join(sorted(valid))}"
+            raise ValueError(msg)
+        return v
+
+
 class AIConfig(BaseModel):
     """AI provider configuration."""
 
@@ -134,6 +154,7 @@ class AutopsyConfig(BaseModel):
 
     version: int = 1
     aws: AWSConfig
+    datadog: DatadogConfig | None = None
     github: GitHubConfig
     ai: AIConfig = Field(default_factory=AIConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
@@ -489,6 +510,47 @@ def init_wizard(config_path: Path | None = None) -> Path:
             hint="Re-run 'autopsy init' and double-check your inputs.",
         ) from exc
 
+    # Log sources (CloudWatch already configured, Datadog optional)
+    console.print("\n[bold cyan]📋 Log Sources[/bold cyan]")
+    console.print(
+        "  Which log sources do you use?\n\n"
+        "  [x] AWS CloudWatch (already configured)\n"
+        "  [ ] Datadog\n"
+    )
+    add_datadog = Prompt.ask("  Add Datadog? [y/N]", default="N").strip().lower() == "y"
+
+    datadog_cfg: DatadogConfig | None = None
+    if add_datadog:
+        console.print("\n[bold cyan]Datadog Configuration[/bold cyan]")
+        site = Prompt.ask(
+            "Datadog Site (us1/eu1/us3/us5/ap1)",
+            default="us1",
+        ).strip()
+        service = Prompt.ask(
+            "Service filter (optional, press Enter to skip)",
+            default="",
+        ).strip() or None
+        source = Prompt.ask(
+            "Source filter (optional, press Enter to skip)",
+            default="",
+        ).strip() or None
+
+        try:
+            datadog_cfg = DatadogConfig(
+                site=site,
+                service=service,
+                source=source,
+                time_window=time_window,
+            )
+        except ValidationError as exc:
+            errors = "; ".join(
+                f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
+            )
+            raise ConfigValidationError(
+                message=f"Invalid Datadog configuration: {errors}",
+                hint="Re-run 'autopsy init' and double-check your Datadog inputs.",
+            ) from exc
+
     # --- Phase 2: Credentials ---
     console.print(
         "\n[bold cyan]🔑 Credentials[/bold cyan]\n"
@@ -599,6 +661,57 @@ def init_wizard(config_path: Path | None = None) -> Path:
         else:
             console.print("[dim]⏭ Skipped[/dim]")
 
+    # Datadog credentials (optional)
+    if datadog_cfg is not None:
+        console.print(
+            "\n[bold cyan]Datadog API Keys[/bold cyan]\n"
+            "  These are stored locally in ~/.autopsy/.env and never leave your machine.\n"
+        )
+        from autopsy.collectors.datadog import DatadogCollector
+
+        dd_api = ""
+        dd_app = ""
+        for _attempt in range(3):
+            dd_api = Prompt.ask(
+                "Datadog API Key (DD_API_KEY)(⚠ctrl+shift+v to paste)",
+                default="",
+                password=True,
+            ).strip()
+            if not dd_api:
+                console.print(
+                    "[yellow]⚠ Datadog API key is required when enabling Datadog.[/yellow]"
+                )
+                continue
+            dd_app = Prompt.ask(
+                "Datadog App Key (DD_APP_KEY)(⚠ctrl+shift+v to paste)",
+                default="",
+                password=True,
+            ).strip()
+            if not dd_app:
+                console.print(
+                    "[yellow]⚠ Datadog App key is required when enabling Datadog.[/yellow]"
+                )
+                continue
+
+            # Temporarily set env vars for validation
+            os.environ["DD_API_KEY"] = dd_api
+            os.environ["DD_APP_KEY"] = dd_app
+
+            collector = DatadogCollector()
+            try:
+                collector.validate_config(datadog_cfg.model_dump())
+                console.print("[green]✔ Datadog keys verified[/green]")
+                env_entries["DD_API_KEY"] = dd_api
+                env_entries["DD_APP_KEY"] = dd_app
+                break
+            except Exception as exc:  # noqa: BLE001
+                console.print(f"[red]✘ Datadog validation failed: {exc}[/red]")
+        else:
+            raise ConfigValidationError(
+                message="Datadog API validation failed after 3 attempts.",
+                hint="Check your Datadog API and App keys and try again.",
+            )
+
     # AWS — just check, don't ask
     aws_status = _check_aws_credentials(aws_cfg)
     if aws_status["found"]:
@@ -614,6 +727,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
     # Build and save config
     config = AutopsyConfig(
         aws=aws_cfg,
+        datadog=datadog_cfg,
         github=GitHubConfig(
             repo=repo,
             token_env="GITHUB_TOKEN",

@@ -8,18 +8,14 @@ import botocore.exceptions
 import pytest
 
 from autopsy.collectors.base import CollectedData
-from autopsy.collectors.cloudwatch import (
-    CloudWatchCollector,
-    _extract_template,
-    _result_row_to_entry,
-    _truncate_message,
-)
+from autopsy.collectors.cloudwatch import CloudWatchCollector, _result_row_to_entry
 from autopsy.utils.errors import (
     AWSAuthError,
     AWSPermissionError,
     CollectorError,
     NoDataError,
 )
+from autopsy.utils.log_reduction import extract_template, truncate_entries
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -94,37 +90,37 @@ class TestExtractTemplate:
 
     def test_uuid_replaced(self) -> None:
         msg = "Request id 550e8400-e29b-41d4-a716-446655440000 failed"
-        assert "<UUID>" in _extract_template(msg)
-        assert "550e8400" not in _extract_template(msg)
+        assert "<UUID>" in extract_template(msg)
+        assert "550e8400" not in extract_template(msg)
 
     def test_ip_replaced(self) -> None:
         msg = "Connection from 192.168.1.100 refused"
-        assert "<IP>" in _extract_template(msg)
-        assert "192.168.1.100" not in _extract_template(msg)
+        assert "<IP>" in extract_template(msg)
+        assert "192.168.1.100" not in extract_template(msg)
 
     def test_timestamp_replaced(self) -> None:
         msg = "Event at 2026-03-06T10:00:00.000Z"
-        assert "<TS>" in _extract_template(msg)
-        assert "2026-03-06" not in _extract_template(msg)
+        assert "<TS>" in extract_template(msg)
+        assert "2026-03-06" not in extract_template(msg)
 
     def test_long_numbers_replaced(self) -> None:
         msg = "Order 12345678 failed"
-        assert "<NUM>" in _extract_template(msg)
-        assert "12345678" not in _extract_template(msg)
+        assert "<NUM>" in extract_template(msg)
+        assert "12345678" not in extract_template(msg)
 
     def test_hex_replaced(self) -> None:
         msg = "Hash abcdef0123456789 invalid"
-        assert "<HEX>" in _extract_template(msg)
-        assert "abcdef0123456789" not in _extract_template(msg)
+        assert "<HEX>" in extract_template(msg)
+        assert "abcdef0123456789" not in extract_template(msg)
 
     def test_short_numbers_unchanged(self) -> None:
         msg = "Retry 3 of 5"
-        result = _extract_template(msg)
+        result = extract_template(msg)
         assert "3" in result and "5" in result
 
     def test_placeholder_only_diff(self) -> None:
-        a = _extract_template("Error at 2026-03-06T10:00:00Z id 12345")
-        b = _extract_template("Error at 2026-03-07T11:00:00Z id 67890")
+        a = extract_template("Error at 2026-03-06T10:00:00Z id 12345")
+        b = extract_template("Error at 2026-03-07T11:00:00Z id 67890")
         assert a == b
 
 
@@ -210,7 +206,9 @@ class TestTruncation:
 
     def test_truncate_message_cap(self) -> None:
         long_msg = "x" * 1000
-        out = _truncate_message(long_msg)
+        out = truncate_entries([{"@message": long_msg}], message_key="@message")[0][
+            "@message"
+        ]
         assert len(out) <= 501  # 500 + "…"
         assert out.endswith("…")
 
@@ -226,7 +224,7 @@ class TestTruncation:
             '  File "/app/lib.py", line 5, in helper',
         ]
         msg = "\n".join(lines)
-        out = _truncate_message(msg)
+        out = truncate_entries([{"@message": msg}], message_key="@message")[0]["@message"]
         # Should keep first line + at most 5 "  File " frame lines
         frame_count = out.count("  File ")
         assert frame_count <= 5

@@ -60,6 +60,14 @@ class GitHubRateLimitError(CollectorError):
     """GitHub API rate limit exceeded."""
 
 
+class DatadogAuthError(CollectorError):
+    """Datadog API key or Application key is invalid."""
+
+
+class DatadogRateLimitError(CollectorError):
+    """Datadog API rate limit exceeded."""
+
+
 class NoDataError(CollectorError):
     """Query returned zero results."""
 

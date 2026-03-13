@@ -13,7 +13,6 @@ from __future__ import annotations
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from hashlib import sha256
 
 import boto3
 import botocore.exceptions
@@ -26,6 +25,7 @@ from autopsy.utils.errors import (
     CollectorError,
     NoDataError,
 )
+from autopsy.utils.log_reduction import apply_token_budget, deduplicate_logs, truncate_entries
 
 console = Console(stderr=True)
 
@@ -340,45 +340,15 @@ class CloudWatchCollector(BaseCollector):
                 hint="Verify your log_groups in ~/.autopsy/config.yaml point to active log groups.",
             )
 
-        # Stage 2: Deduplication by template
-        template_to_entry: dict[str, dict] = {}
-        for entry in all_rows:
-            msg = entry.get("@message", "")
-            template = _extract_template(msg)
-            key = sha256(template.encode("utf-8")).hexdigest()
-            if key in template_to_entry:
-                template_to_entry[key]["occurrences"] = (
-                    template_to_entry[key].get("occurrences", 1) + 1
-                )
-            else:
-                entry["occurrences"] = 1
-                template_to_entry[key] = entry
-
-        deduped: list[dict] = list(template_to_entry.values())
-
-        # Stage 3: Truncation
-        for entry in deduped:
-            msg = entry.get("@message", "")
-            entry["@message"] = _truncate_message(msg)
-
-        # Stage 4: Token budget
-        truncated = False
-        total_tokens = sum(
-            _estimate_tokens(e.get("@message", "")) + _estimate_tokens(e.get("@timestamp", ""))
-            for e in deduped
+        # Stage 2–4: Deduplication, truncation, token budget (shared utilities)
+        deduped = deduplicate_logs(all_rows, message_key="@message")
+        deduped = truncate_entries(deduped, message_key="@message")
+        deduped, truncated = apply_token_budget(
+            deduped,
+            message_key="@message",
+            timestamp_key="@timestamp",
+            budget=TOKEN_BUDGET,
         )
-        if total_tokens > TOKEN_BUDGET:
-            truncated = True
-            current: list[dict] = []
-            current_tokens = 0
-            for entry in deduped:  # deduped is newest-first; keep newest entries that fit
-                t = _estimate_tokens(entry.get("@message", "")) + _estimate_tokens(
-                    entry.get("@timestamp", "")
-                )
-                if current_tokens + t <= TOKEN_BUDGET:
-                    current.append(entry)
-                    current_tokens += t
-            deduped = list(reversed(current))  # restore chronological (oldest-first) order
 
         raw_query = (
             f"Logs Insights filter (error|exception|fatal|panic|timeout|4xx|5xx); "
