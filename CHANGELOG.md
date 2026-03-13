@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Datadog log collector: optional integration with Datadog Logs API (validate + search); supports us1/eu1/us3/us5/ap1; API/App keys via env; skips with warning when keys are missing.
+- Shared log reduction pipeline (dedup, truncation, token budget) used by CloudWatch and Datadog.
+- Init wizard can add optional Datadog config (site, service, source) and write `DD_API_KEY` / `DD_APP_KEY` to `~/.autopsy/.env`.
+- `autopsy config validate` checks Datadog when configured.
+
 ## [0.2.2] - 2026-03-10
 
 ### Added
