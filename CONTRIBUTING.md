@@ -45,7 +45,7 @@ CI runs `ruff check .` and `pytest` on every push and pull request.
 ## Project layout
 
 - **`autopsy/cli.py`** — CLI entrypoint and subcommands only; no business logic.
-- **`autopsy/collectors/`** — Data collectors (CloudWatch, GitHub).
+- **`autopsy/collectors/`** — Data collectors (CloudWatch, Datadog, GitHub).
 - **`autopsy/ai/`** — AI engine (prompts, models, diagnosis).
 - **`autopsy/renderers/`** — Terminal and JSON output.
 - **`autopsy/config.py`** — Configuration loading and validation.
