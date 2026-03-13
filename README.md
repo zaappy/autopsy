@@ -28,6 +28,7 @@ Before running Autopsy, you need:
 | Area | Requirement |
 |------|-------------|
 | **AWS** | Account with CloudWatch Logs; credentials via `aws configure` or `AWS_PROFILE`; IAM: `logs:DescribeLogGroups`, `logs:StartQuery`, `logs:GetQueryResults`; at least one log group. *Check:* `aws sts get-caller-identity` returns your account ID. |
+| **Datadog** | *Optional.* If using Datadog for logs: [API key](https://docs.datadoghq.com/account_management/api-app-keys/#api-keys) and [Application key](https://docs.datadoghq.com/account_management/api-app-keys/#application-keys); site (e.g. `datadoghq.com`, `datadoghq.eu`). |
 | **GitHub** | Account + [Personal Access Token](https://github.com/settings/tokens) with **`repo`** scope; your app’s repo on GitHub. *Check:* `curl -H "Authorization: Bearer YOUR_TOKEN" https://api.github.com/user` returns your username. |
 | **AI provider** | **OpenAI** ([platform.openai.com](https://platform.openai.com)) or **Anthropic** ([console.anthropic.com](https://console.anthropic.com)) — account, API key, and credits. |
 | **Local** | Python 3.10+ (`python --version`), pip, terminal, internet. |
@@ -55,7 +56,7 @@ pip install -e ".[dev]"
 ```bash
 autopsy           # Launch interactive TUI (menu, then run Diagnose or Setup)
 autopsy init      # Or: interactive config wizard (~/.autopsy/config.yaml)
-autopsy diagnose  # Or: run diagnosis directly (CloudWatch + GitHub → AI → panels)
+autopsy diagnose  # Or: run diagnosis directly (CloudWatch, optional Datadog + GitHub → AI → panels)
 ```
 
 **Interactive TUI** — Run `autopsy` with no arguments to open the interactive terminal UI:
@@ -75,6 +76,7 @@ After `autopsy init`, edit `~/.autopsy/config.yaml` or re-run the wizard. The in
 | Section   | Purpose |
 |----------|---------|
 | **aws**  | CloudWatch region, log groups, time window (minutes). Uses your AWS CLI credentials. |
+| **datadog** | *Optional.* Datadog site, service/source filters, time window. Uses `DD_API_KEY` and `DD_APP_KEY` from `.env`. |
 | **github** | Repo (`owner/repo`), branch, number of recent commits to analyze. Uses `GITHUB_TOKEN`. |
 | **ai**   | Provider (`anthropic` or `openai`), model, API keys. |
 | **slack** | Optional webhook integration for posting diagnoses to Slack. |
@@ -94,7 +96,8 @@ autopsy config validate   # Check env vars and connectivity
 ┌─────────────┐     ┌──────────────────┐     ┌─────────────┐     ┌──────────────┐
 │   Config    │────▶│  Data Collectors │────▶│  AI Engine  │────▶│  Renderers   │
 │ ~/.autopsy  │     │  CloudWatch      │     │  (Claude /   │     │  Terminal or │
-│ config.yaml │     │  GitHub          │     │   OpenAI)    │     │  JSON        │
+│ config.yaml │     │  Datadog (opt.)  │     │   OpenAI)    │     │  JSON        │
+│             │     │  GitHub          │     │              │     │              │
 └─────────────┘     └──────────────────┘     └─────────────┘     └──────────────┘
                            │                          │
                            ▼                          ▼
@@ -102,7 +105,7 @@ autopsy config validate   # Check env vars and connectivity
                     (deduped, truncated)       root cause, deploy, fix, timeline
 ```
 
-1. **Collect** — CloudWatch Logs Insights (error-level) and GitHub (last N commits + diffs).
+1. **Collect** — CloudWatch Logs Insights (error-level), optionally Datadog Logs, and GitHub (last N commits + diffs).
 2. **Reduce** — Log dedup and token budget; diff filters (code files only, cap per file).
 3. **Diagnose** — Single prompt with logs + deploys; LLM returns JSON (root cause, correlated deploy, suggested fix, timeline).
 4. **Render** — Rich panels in the terminal or `--json` for piping.
