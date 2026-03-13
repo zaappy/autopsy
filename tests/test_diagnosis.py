@@ -16,7 +16,14 @@ from autopsy.ai.models import (
     SuggestedFix,
     TimelineEvent,
 )
-from autopsy.config import AIConfig, AutopsyConfig, AWSConfig, GitHubConfig, OutputConfig
+from autopsy.config import (
+    AIConfig,
+    AutopsyConfig,
+    AWSConfig,
+    DatadogConfig,
+    GitHubConfig,
+    OutputConfig,
+)
 from autopsy.diagnosis import DiagnosisOrchestrator
 from autopsy.renderers.json_out import JSONRenderer
 from autopsy.renderers.terminal import TerminalRenderer
@@ -200,6 +207,64 @@ class TestOrchestratorRun:
 
         with pytest.raises(AIAuthError, match="OpenAI API key not found"):
             orch.run(provider="openai")
+
+    @patch("autopsy.diagnosis.AIEngine")
+    @patch("autopsy.diagnosis.GitHubCollector")
+    @patch("autopsy.diagnosis.CloudWatchCollector")
+    def test_run_skips_datadog_when_keys_missing(
+        self,
+        mock_cw_cls: MagicMock,
+        mock_gh_cls: MagicMock,
+        mock_engine_cls: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Datadog configured but DD_API_KEY/DD_APP_KEY unset: warn and skip, CW + GH still run."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp-test")
+        monkeypatch.delenv("DD_API_KEY", raising=False)
+        monkeypatch.delenv("DD_APP_KEY", raising=False)
+
+        mock_cw = MagicMock()
+        mock_cw.validate_config.return_value = True
+        mock_cw.collect.return_value = MagicMock(source="cloudwatch", data_type="logs")
+        mock_cw_cls.return_value = mock_cw
+
+        mock_gh = MagicMock()
+        mock_gh.validate_config.return_value = True
+        mock_gh.collect.return_value = MagicMock(source="github", data_type="deploys")
+        mock_gh_cls.return_value = mock_gh
+
+        mock_engine_cls.return_value.diagnose.return_value = _sample_result()
+
+        config = AutopsyConfig(
+            aws=AWSConfig(
+                region="us-east-1",
+                log_groups=["/aws/lambda/test"],
+                time_window=30,
+            ),
+            datadog=DatadogConfig(site="us1", time_window=30),
+            github=GitHubConfig(
+                repo="owner/repo",
+                token_env="GITHUB_TOKEN",
+                deploy_count=5,
+                branch="main",
+            ),
+            ai=AIConfig(
+                provider="anthropic",
+                model="claude-sonnet-4-20250514",
+            ),
+            output=OutputConfig(),
+        )
+        orch = DiagnosisOrchestrator(config)
+        result = orch.run()
+
+        assert result.root_cause.summary == "Test root cause"
+        mock_cw.validate_config.assert_called_once()
+        mock_cw.collect.assert_called_once()
+        mock_gh.validate_config.assert_called_once()
+        mock_gh.collect.assert_called_once()
+        call_args = mock_engine_cls.return_value.diagnose.call_args[0][0]
+        assert len(call_args) == 2, "Datadog skipped; only CloudWatch + GitHub collected"
 
 
 # ---------------------------------------------------------------------------

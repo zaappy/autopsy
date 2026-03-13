@@ -678,7 +678,9 @@ def init_wizard(config_path: Path | None = None) -> Path:
                 password=True,
             ).strip()
             if not dd_api:
-                console.print("[yellow]⚠ Datadog API key is required when enabling Datadog.[/yellow]")
+                console.print(
+                    "[yellow]⚠ Datadog API key is required when enabling Datadog.[/yellow]"
+                )
                 continue
             dd_app = Prompt.ask(
                 "Datadog App Key (DD_APP_KEY)(⚠ctrl+shift+v to paste)",
@@ -686,7 +688,9 @@ def init_wizard(config_path: Path | None = None) -> Path:
                 password=True,
             ).strip()
             if not dd_app:
-                console.print("[yellow]⚠ Datadog App key is required when enabling Datadog.[/yellow]")
+                console.print(
+                    "[yellow]⚠ Datadog App key is required when enabling Datadog.[/yellow]"
+                )
                 continue
 
             # Temporarily set env vars for validation

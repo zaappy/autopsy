@@ -13,7 +13,6 @@ from __future__ import annotations
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from hashlib import sha256
 
 import boto3
 import botocore.exceptions

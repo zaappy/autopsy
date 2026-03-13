@@ -92,7 +92,8 @@ class TestApplyTokenBudget:
     def test_fifo_eviction_under_budget_flag(self) -> None:
         # Build entries newest-first so helper's FIFO eviction removes oldest.
         entries = [
-            {"message": "a" * 400, "timestamp": f"2026-03-06T10:00:{i:02d}Z"} for i in range(99, -1, -1)
+            {"message": "a" * 400, "timestamp": f"2026-03-06T10:00:{i:02d}Z"}
+            for i in range(99, -1, -1)
         ]
         kept, truncated = apply_token_budget(entries, budget=3000)
         assert truncated is True

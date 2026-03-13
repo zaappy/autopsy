@@ -12,7 +12,6 @@ from pydantic import ValidationError
 from autopsy.config import (
     AIConfig,
     AutopsyConfig,
-    DatadogConfig,
     _write_env_file,
     load_config,
     load_env,

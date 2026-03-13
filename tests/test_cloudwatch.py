@@ -9,13 +9,13 @@ import pytest
 
 from autopsy.collectors.base import CollectedData
 from autopsy.collectors.cloudwatch import CloudWatchCollector, _result_row_to_entry
-from autopsy.utils.log_reduction import extract_template, truncate_entries
 from autopsy.utils.errors import (
     AWSAuthError,
     AWSPermissionError,
     CollectorError,
     NoDataError,
 )
+from autopsy.utils.log_reduction import extract_template, truncate_entries
 
 # ---------------------------------------------------------------------------
 # Helpers

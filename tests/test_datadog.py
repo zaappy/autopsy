@@ -3,19 +3,17 @@ from __future__ import annotations
 """Tests for autopsy.collectors.datadog — Datadog log collector."""
 
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 from urllib.error import HTTPError, URLError
 
+import pytest
+
 from autopsy.collectors.base import CollectedData
-from autopsy.collectors.datadog import DatadogCollector, SITE_URLS
+from autopsy.collectors.datadog import SITE_URLS, DatadogCollector
 from autopsy.config import AutopsyConfig, AWSConfig, DatadogConfig, GitHubConfig
 from autopsy.utils.errors import (
     CollectorError,
-    ConfigValidationError,
     DatadogAuthError,
     DatadogRateLimitError,
     NoDataError,
@@ -39,9 +37,9 @@ def _dd_config(
 
 
 def _dd_response(
-    entries: List[Dict[str, Any]],
+    entries: list[dict[str, Any]],
     cursor: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     data = []
     for e in entries:
         data.append(
@@ -56,7 +54,7 @@ def _dd_response(
                 },
             }
         )
-    meta: Dict[str, Any] = {}
+    meta: dict[str, Any] = {}
     if cursor is not None:
         meta = {"page": {"after": cursor}}
     return {"data": data, "meta": meta}
@@ -68,7 +66,9 @@ def _http_error(status: int) -> HTTPError:
 
 class TestValidateConfig:
     @patch("autopsy.collectors.datadog.urlopen")
-    def test_validate_success(self, mock_urlopen: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_validate_success(
+        self, mock_urlopen: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("DD_API_KEY", "key")
         monkeypatch.setenv("DD_APP_KEY", "app")
         resp = MagicMock()
@@ -79,7 +79,9 @@ class TestValidateConfig:
         assert collector.validate_config(_dd_config()) is True
 
     @patch("autopsy.collectors.datadog.urlopen")
-    def test_validate_bad_api_key_403(self, mock_urlopen: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_validate_bad_api_key_403(
+        self, mock_urlopen: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("DD_API_KEY", "bad")
         monkeypatch.setenv("DD_APP_KEY", "bad")
         mock_urlopen.side_effect = _http_error(403)
@@ -91,7 +93,9 @@ class TestValidateConfig:
         assert "DD_API_KEY" in exc_info.value.hint
 
     @patch("autopsy.collectors.datadog.urlopen")
-    def test_validate_bad_app_key_401(self, mock_urlopen: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_validate_bad_app_key_401(
+        self, mock_urlopen: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("DD_API_KEY", "key")
         monkeypatch.setenv("DD_APP_KEY", "bad")
         mock_urlopen.side_effect = _http_error(401)
@@ -101,7 +105,9 @@ class TestValidateConfig:
             collector.validate_config(_dd_config())
 
     @patch("autopsy.collectors.datadog.urlopen")
-    def test_validate_rate_limit_429(self, mock_urlopen: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_validate_rate_limit_429(
+        self, mock_urlopen: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("DD_API_KEY", "key")
         monkeypatch.setenv("DD_APP_KEY", "app")
         mock_urlopen.side_effect = _http_error(429)

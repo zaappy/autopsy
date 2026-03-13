@@ -11,9 +11,6 @@ Stages:
 
 import re
 from hashlib import sha256
-from typing import Tuple
-
-from autopsy.collectors.base import CollectedData  # noqa: TCH001 — runtime type only
 
 MAX_MESSAGE_CHARS = 500
 STACK_TRACE_MAX_FRAMES = 5
@@ -138,7 +135,7 @@ def apply_token_budget(
     message_key: str = "message",
     timestamp_key: str = "timestamp",
     budget: int = TOKEN_BUDGET,
-) -> Tuple[list[dict], bool]:
+) -> tuple[list[dict], bool]:
     """Stage 4: Hard token cap with FIFO eviction.
 
     Assumes ``entries`` are in newest-first order. Keeps the newest entries that

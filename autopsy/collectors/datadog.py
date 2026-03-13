@@ -9,7 +9,7 @@ Pulls error-level logs from Datadog's Logs Search API, applies the shared
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -56,8 +56,8 @@ def _http_request(
     api_key: str,
     app_key: str,
     method: str = "GET",
-    body: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
+    body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     url = f"{base_url}{path}"
     headers = {
         "DD-API-KEY": api_key,
@@ -81,9 +81,9 @@ def _http_request(
                 message="Datadog authentication failed",
                 hint=(
                     "Check DD_API_KEY and DD_APP_KEY env vars.\n"
-                    "Generate keys: app.datadoghq.com → Organization Settings → API Keys\n"
-                    "Docs: https://docs.datadoghq.com/account_management/api-app-keys/"
+                    "Generate keys: app.datadoghq.com → Organization Settings → API Keys"
                 ),
+                docs_url="https://docs.datadoghq.com/account_management/api-app-keys/",
             ) from exc
         if status == 429:
             raise DatadogRateLimitError(
@@ -92,6 +92,7 @@ def _http_request(
                     "Wait 60 seconds and retry. Consider narrowing your query with "
                     "service/source filters."
                 ),
+                docs_url="https://docs.datadoghq.com/api/latest/rate-limits/",
             ) from exc
         if status == 400:
             raise CollectorError(
@@ -132,9 +133,9 @@ class DatadogCollector(BaseCollector):
                 message="Datadog API key or App key not found in environment.",
                 hint=(
                     f"Check env vars {api_key_env} and {app_key_env}.\n"
-                    "Generate keys: app.datadoghq.com → Organization Settings → API Keys\n"
-                    "Docs: https://docs.datadoghq.com/account_management/api-app-keys/"
+                    "Generate keys: app.datadoghq.com → Organization Settings → API Keys"
                 ),
+                docs_url="https://docs.datadoghq.com/account_management/api-app-keys/",
             )
 
         base_url = _resolve_base_url(site)
@@ -164,9 +165,9 @@ class DatadogCollector(BaseCollector):
                 message="Datadog API key or App key not found in environment.",
                 hint=(
                     f"Check env vars {api_key_env} and {app_key_env}.\n"
-                    "Generate keys: app.datadoghq.com → Organization Settings → API Keys\n"
-                    "Docs: https://docs.datadoghq.com/account_management/api-app-keys/"
+                    "Generate keys: app.datadoghq.com → Organization Settings → API Keys"
                 ),
+                docs_url="https://docs.datadoghq.com/account_management/api-app-keys/",
             )
 
         base_url = _resolve_base_url(site)
@@ -181,14 +182,14 @@ class DatadogCollector(BaseCollector):
             query_parts.append(f"source:{source}")
         query = " ".join(query_parts)
 
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
         page_cursor: str | None = None
 
         with console.status(
             f"Querying Datadog logs for service: {service or '*'}...", spinner="dots"
         ):
             while True:
-                body: Dict[str, Any] = {
+                body: dict[str, Any] = {
                     "filter": {
                         "query": query,
                         "from": start_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -262,7 +263,7 @@ class DatadogCollector(BaseCollector):
             truncated=truncated,
         )
 
-    def _normalize_entry(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_entry(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Convert Datadog log format to standard CollectedData entry."""
         attrs = raw.get("attributes", {}) or {}
         return {

@@ -7,8 +7,11 @@ the structured result. Rendering is the caller's responsibility.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import TYPE_CHECKING
+
+from rich.console import Console
 
 from autopsy.ai.engine import AIEngine
 from autopsy.collectors.cloudwatch import CloudWatchCollector
@@ -19,6 +22,8 @@ from autopsy.config import AutopsyConfig  # noqa: TC001 — used at runtime for 
 if TYPE_CHECKING:
     from autopsy.ai.models import DiagnosisResult
     from autopsy.collectors.base import BaseCollector, CollectedData
+
+console = Console(stderr=True)
 
 
 class DiagnosisOrchestrator:
@@ -37,14 +42,14 @@ class DiagnosisOrchestrator:
         collectors: list[BaseCollector] = []
         if self.config.aws:
             cw = CloudWatchCollector()
-            setattr(cw, "_autopsy_role", "cloudwatch")
+            cw._autopsy_role = "cloudwatch"
             collectors.append(cw)
         if getattr(self.config, "datadog", None) is not None:
             dd = DatadogCollector()
-            setattr(dd, "_autopsy_role", "datadog")
+            dd._autopsy_role = "datadog"
             collectors.append(dd)
         gh = GitHubCollector()
-        setattr(gh, "_autopsy_role", "github")
+        gh._autopsy_role = "github"
         collectors.append(gh)
         return collectors
 
@@ -116,6 +121,16 @@ class DiagnosisOrchestrator:
                 cfg = aws_dict
             elif role == "datadog":
                 if datadog_dict is None:
+                    continue
+                api_key_env = datadog_dict.get("api_key_env", "DD_API_KEY")
+                app_key_env = datadog_dict.get("app_key_env", "DD_APP_KEY")
+                if not os.environ.get(api_key_env, "").strip() or not os.environ.get(
+                    app_key_env, ""
+                ).strip():
+                    console.print(
+                        "[yellow]⚠ Datadog: API or App key not set — skipping. "
+                        "CloudWatch + GitHub still active.[/yellow]"
+                    )
                     continue
                 cfg = datadog_dict
             else:  # github
