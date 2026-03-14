@@ -7,12 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-14
+
+### Changed
+
+- Multi-source UX: terminal SOURCES panel and Slack “Sources” line only when there are multiple log sources and/or multiple deploy sources (classic CloudWatch + GitHub unchanged). Post-mortem “Data Sources” table only when more than one source. User prompt adds cross-source instructions whenever more than one collector contributed data. Deploy prompt includes a `files` list when diffs are absent.
+
 ### Added
 
+- GitLab collector: optional integration with GitLab API via `python-gitlab`; pulls commits, diffs, merge requests, and deployment events; supports self-hosted GitLab URLs; smart diff reduction matching GitHub collector; `GITLAB_TOKEN` via env; skips with warning when token is missing; can coexist with GitHub collector.
+- Init wizard can add optional GitLab config (URL, project ID, branch, deploy count) and write `GITLAB_TOKEN` to `~/.autopsy/.env`.
+- `autopsy config validate` checks GitLab when configured.
+- AI prompts label deploy entries by source (`[Github]` / `[Gitlab]`) for multi-source correlation.
 - Datadog log collector: optional integration with Datadog Logs API (validate + search); supports us1/eu1/us3/us5/ap1; API/App keys via env; skips with warning when keys are missing.
 - Shared log reduction pipeline (dedup, truncation, token budget) used by CloudWatch and Datadog.
 - Init wizard can add optional Datadog config (site, service, source) and write `DD_API_KEY` / `DD_APP_KEY` to `~/.autopsy/.env`.
 - `autopsy config validate` checks Datadog when configured.
+- Parallel collector execution: all data collectors now run concurrently by default using `asyncio.to_thread`, with `ThreadPoolExecutor` fallback for nested event loops. Partial failures are handled gracefully (warn and continue with remaining sources). Per-collector timing tracked and displayed.
+- `autopsy diagnose --sequential` flag to force sequential collection for debugging.
+- Multi-source diagnosis: `DiagnosisResult.sources` and JSON `sources` array; `autopsy diagnose --source` (repeatable) to limit collectors.
 
 ## [0.2.2] - 2026-03-10
 
@@ -50,7 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/zaappy/autopsy/compare/main...HEAD
+[Unreleased]: https://github.com/zaappy/autopsy/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/zaappy/autopsy/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/zaappy/autopsy/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/zaappy/autopsy/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/zaappy/autopsy/releases/tag/v0.2.0

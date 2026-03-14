@@ -60,6 +60,14 @@ class GitHubRateLimitError(CollectorError):
     """GitHub API rate limit exceeded."""
 
 
+class GitLabAuthError(CollectorError):
+    """GitLab PAT invalid or expired."""
+
+
+class GitLabRateLimitError(CollectorError):
+    """GitLab API rate limit exceeded."""
+
+
 class DatadogAuthError(CollectorError):
     """Datadog API key or Application key is invalid."""
 

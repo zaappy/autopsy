@@ -135,6 +135,17 @@ def init(slack: bool) -> None:
     is_flag=True,
     help="Post diagnosis to Slack.",
 )
+@click.option(
+    "--sequential",
+    is_flag=True,
+    help="Run collectors sequentially instead of in parallel (debugging).",
+)
+@click.option(
+    "--source",
+    "sources",
+    multiple=True,
+    help="Filter to specific sources (repeatable, e.g., --source cloudwatch --source github).",
+)
 def diagnose(
     time_window: int | None,
     log_groups: tuple[str, ...],
@@ -144,6 +155,8 @@ def diagnose(
     postmortem: bool,
     postmortem_path: str | None,
     slack: bool,
+    sequential: bool,
+    sources: tuple[str, ...],
 ) -> None:
     """Run AI-powered incident diagnosis."""
     from autopsy.config import load_config
@@ -187,6 +200,8 @@ def diagnose(
                 time_window=overrides.get("time_window"),
                 log_groups=overrides.get("log_groups"),
                 provider=ai_provider_str,
+                sequential=sequential,
+                source_filter=sources if sources else None,
             )
         duration_s = round(_time.monotonic() - start, 2)
         console.print(f"[green]✔[/green] Diagnosis complete ({duration_s}s)\n")

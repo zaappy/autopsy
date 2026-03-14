@@ -23,7 +23,7 @@ If you believe you’ve found a security vulnerability in Autopsy CLI, please re
 
 - Credential or token leakage (e.g. via config, env, or logs)
 - Insecure handling of `~/.autopsy/.env` or API keys
-- Issues in data sent to or received from third-party APIs (AWS, GitHub, AI providers)
+- Issues in data sent to or received from third-party APIs (AWS, GitHub, GitLab, AI providers)
 - Any behavior that could expose user or deployment data
 
 We appreciate your help in keeping Autopsy CLI safe for everyone.

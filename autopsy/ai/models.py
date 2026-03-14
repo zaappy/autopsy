@@ -45,6 +45,14 @@ class TimelineEvent(BaseModel):
     event: str = Field(description="What happened at this point")
 
 
+class SourceInfo(BaseModel):
+    """Metadata about a single data source that contributed to the diagnosis."""
+
+    name: str = Field(description="Collector identifier, e.g. 'cloudwatch', 'datadog'")
+    data_type: str = Field(description="'logs' | 'deploys' | 'metrics'")
+    entry_count: int = Field(description="Number of entries from this source")
+
+
 class DiagnosisResult(BaseModel):
     """Complete structured output from a diagnosis run."""
 
@@ -52,6 +60,10 @@ class DiagnosisResult(BaseModel):
     correlated_deploy: CorrelatedDeploy
     suggested_fix: SuggestedFix
     timeline: list[TimelineEvent] = Field(default_factory=list)
+    sources: list[SourceInfo] = Field(
+        default_factory=list,
+        description="Data sources that contributed to the diagnosis",
+    )
     prompt_version: str = "v1"
     raw_response: str | None = Field(
         default=None, description="Populated on parse-failure fallback"

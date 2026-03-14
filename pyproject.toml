@@ -17,7 +17,7 @@ include = [
 
 [project]
 name = "autopsy-cli"
-version = "0.2.2"
+version = "0.3.0"
 description = "AI-powered incident diagnosis for engineering teams. Pull logs and deploys, get a structured root cause in 30 seconds."
 readme = "README.md"
 license = "MIT"
@@ -40,7 +40,7 @@ classifiers = [
     "Topic :: System :: Monitoring",
     "Topic :: Software Development :: Quality Assurance",
 ]
-keywords = ["incident", "diagnosis", "root-cause", "cloudwatch", "github", "ai", "llm"]
+keywords = ["incident", "diagnosis", "root-cause", "cloudwatch", "github", "gitlab", "ai", "llm"]
 dependencies = [
     "click>=8.0",
     "python-dotenv>=1.0",
@@ -52,6 +52,7 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "questionary>=2.0",
+    "python-gitlab>=4.0",
 ]
 
 [project.optional-dependencies]
