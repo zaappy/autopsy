@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared log reduction pipeline (dedup, truncation, token budget) used by CloudWatch and Datadog.
 - Init wizard can add optional Datadog config (site, service, source) and write `DD_API_KEY` / `DD_APP_KEY` to `~/.autopsy/.env`.
 - `autopsy config validate` checks Datadog when configured.
+- Parallel collector execution: all data collectors now run concurrently by default using `asyncio.to_thread`, with `ThreadPoolExecutor` fallback for nested event loops. Partial failures are handled gracefully (warn and continue with remaining sources). Per-collector timing tracked and displayed.
+- `autopsy diagnose --sequential` flag to force sequential collection for debugging.
 
 ## [0.2.2] - 2026-03-10
 

@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autopsy CLI — Documentation</title>
+  <meta name="description" content="AI-powered incident diagnosis for engineering teams. Pull logs and deploys, get a structured root cause in 30 seconds.">
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg-card:   #161b22;
+      --bg-code:   #1c2128;
+      --bg-hover:  #1f2937;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --text-dim:  #8b949e;
+      --accent:    #ff3b30;
+      --accent-soft:#ff3b3022;
+      --link:      #58a6ff;
+      --green:     #3fb950;
+      --yellow:    #d29922;
+      --sidebar-w: 260px;
+      --header-h:  56px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    [data-theme="light"] {
+      --bg:        #ffffff;
+      --bg-card:   #f6f8fa;
+      --bg-code:   #f0f2f5;
+      --bg-hover:  #eaeef2;
+      --border:    #d0d7de;
+      --text:      #1f2328;
+      --text-dim:  #656d76;
+      --accent:    #cf222e;
+      --accent-soft:#cf222e15;
+      --link:      #0969da;
+      --green:     #1a7f37;
+      --yellow:    #9a6700;
+    }
+
+    html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-h) + 16px); }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--text); line-height: 1.6; }
+
+    /* ── Header ────────────────────────────────────────────── */
+    .header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--header-h);
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 24px;
+      backdrop-filter: blur(12px);
+    }
+    .header-logo {
+      font-weight: 700; font-size: 18px; color: var(--accent);
+      font-family: var(--font-mono); letter-spacing: -0.5px;
+      text-decoration: none;
+    }
+    .header-logo span { color: var(--text-dim); font-weight: 400; font-size: 13px; margin-left: 8px; }
+    .header-right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+    .header-right a {
+      color: var(--text-dim); text-decoration: none; font-size: 13px; padding: 6px 10px;
+      border-radius: 6px; transition: all 0.15s;
+    }
+    .header-right a:hover { color: var(--text); background: var(--bg-hover); }
+    .theme-toggle {
+      background: none; border: 1px solid var(--border); color: var(--text-dim);
+      padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 14px;
+      transition: all 0.15s;
+    }
+    .theme-toggle:hover { color: var(--text); border-color: var(--text-dim); }
+    .hamburger {
+      display: none; background: none; border: none; color: var(--text);
+      font-size: 22px; cursor: pointer; padding: 4px 8px;
+    }
+
+    /* ── Sidebar ───────────────────────────────────────────── */
+    .sidebar {
+      position: fixed; top: var(--header-h); left: 0; bottom: 0;
+      width: var(--sidebar-w);
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      overflow-y: auto; padding: 16px 0;
+      transition: transform 0.2s;
+    }
+    .sidebar-section { padding: 0 16px; margin-bottom: 20px; }
+    .sidebar-section-title {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.8px; color: var(--text-dim); margin-bottom: 6px; padding: 0 8px;
+    }
+    .sidebar a {
+      display: block; padding: 5px 8px; margin: 1px 0;
+      color: var(--text-dim); text-decoration: none; font-size: 13.5px;
+      border-radius: 6px; transition: all 0.12s;
+    }
+    .sidebar a:hover { color: var(--text); background: var(--bg-hover); }
+    .sidebar a.active { color: var(--accent); background: var(--accent-soft); font-weight: 500; }
+
+    /* ── Main Content ──────────────────────────────────────── */
+    .main {
+      margin-left: var(--sidebar-w); margin-top: var(--header-h);
+      padding: 40px 48px 80px; max-width: 900px;
+    }
+
+    /* ── Typography ────────────────────────────────────────── */
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
+    h2 { font-size: 22px; font-weight: 600; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 17px; font-weight: 600; margin: 32px 0 12px; }
+    p { margin-bottom: 16px; }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    strong { font-weight: 600; }
+    ul, ol { margin: 0 0 16px 24px; }
+    li { margin-bottom: 6px; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+    /* ── Code ──────────────────────────────────────────────── */
+    code {
+      font-family: var(--font-mono); font-size: 0.88em;
+      background: var(--bg-code); padding: 2px 6px; border-radius: 4px;
+    }
+    pre {
+      background: var(--bg-code); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px 20px; overflow-x: auto;
+      margin: 0 0 16px; line-height: 1.5;
+    }
+    pre code { background: none; padding: 0; font-size: 13px; }
+
+    /* ── Tables ────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 12px; border: 1px solid var(--border); }
+    th { background: var(--bg-code); font-weight: 600; font-size: 13px; }
+    td { vertical-align: top; }
+    td code { font-size: 12.5px; white-space: nowrap; }
+
+    /* ── Cards ─────────────────────────────────────────────── */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 24px 0; }
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px; transition: border-color 0.15s;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card-icon { font-size: 28px; margin-bottom: 8px; }
+    .card h4 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .card p { font-size: 13px; color: var(--text-dim); margin: 0; }
+
+    /* ── Hero ──────────────────────────────────────────────── */
+    .hero-ascii {
+      color: var(--accent); font-family: var(--font-mono);
+      font-size: 13px; line-height: 1.15; margin: 0 0 8px;
+      white-space: pre; overflow-x: auto;
+    }
+    .hero-tagline { font-size: 14px; color: var(--text-dim); margin-bottom: 24px; font-style: italic; }
+    .hero-desc { font-size: 17px; line-height: 1.7; margin-bottom: 24px; }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 24px; }
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+    .badge.green { border-color: var(--green); color: var(--green); }
+    .badge.accent { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Pipeline diagram ─────────────────────────────────── */
+    .pipeline {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+      margin: 24px 0;
+    }
+    .pipeline-step {
+      text-align: center; background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 12px; position: relative;
+    }
+    .pipeline-step::after {
+      content: ""; position: absolute; right: -9px; top: 50%;
+      transform: translateY(-50%); width: 0; height: 0;
+      border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+      border-left: 6px solid var(--border);
+    }
+    .pipeline-step:last-child::after { display: none; }
+    .pipeline-num {
+      display: inline-block; width: 22px; height: 22px; line-height: 22px;
+      border-radius: 50%; background: var(--accent); color: #fff;
+      font-size: 11px; font-weight: 700; margin-bottom: 6px;
+    }
+    .pipeline-step h5 { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .pipeline-step p { font-size: 12px; color: var(--text-dim); margin: 0; }
+
+    /* ── Section pages (hidden/shown) ─────────────────────── */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── Callout ───────────────────────────────────────────── */
+    .callout {
+      border-left: 3px solid var(--accent); background: var(--accent-soft);
+      padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0;
+      font-size: 14px;
+    }
+    .callout.info { border-left-color: var(--link); background: #58a6ff15; }
+    .callout.warn { border-left-color: var(--yellow); background: #d2992215; }
+
+    /* ── Version badge ─────────────────────────────────────── */
+    .version-badge {
+      display: inline-block; background: var(--accent-soft); color: var(--accent);
+      font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px;
+      font-family: var(--font-mono); margin-left: 8px;
+    }
+
+    /* ── Exception tree ────────────────────────────────────── */
+    .tree { font-family: var(--font-mono); font-size: 13px; line-height: 1.8; }
+    .tree .indent { padding-left: 24px; }
+    .tree .indent2 { padding-left: 48px; }
+
+    /* ── Responsive ────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-100%); z-index: 99; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; padding: 24px 20px 60px; }
+      .hamburger { display: block; }
+      .pipeline { grid-template-columns: 1fr 1fr; }
+      .pipeline-step::after { display: none; }
+      .header-right a.desktop-only { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ Header ═══════════════════════════════════════════════ -->
+<header class="header">
+  <button class="hamburger" onclick="toggleSidebar()" aria-label="Toggle menu">&#9776;</button>
+  <a href="#" class="header-logo" onclick="showPage('overview')">AUTOPSY<span>docs</span></a>
+  <div class="header-right">
+    <a href="https://github.com/zaappy/autopsy" class="desktop-only">GitHub</a>
+    <a href="https://pypi.org/project/autopsy-cli/" class="desktop-only">PyPI</a>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#9789;</button>
+  </div>
+</header>
+
+<!-- ═══ Sidebar ══════════════════════════════════════════════ -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Getting Started</div>
+    <a href="#" data-page="overview" class="active">Overview</a>
+    <a href="#" data-page="installation">Installation</a>
+    <a href="#" data-page="quickstart">Quick Start</a>
+    <a href="#" data-page="configuration">Configuration</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Guides</div>
+    <a href="#" data-page="how-it-works">How It Works</a>
+    <a href="#" data-page="cli-reference">CLI Reference</a>
+    <a href="#" data-page="collectors">Collectors</a>
+    <a href="#" data-page="ai-engine">AI Engine</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">API Reference</div>
+    <a href="#" data-page="interfaces">Interface Contracts</a>
+    <a href="#" data-page="models">Data Models</a>
+    <a href="#" data-page="errors">Error Hierarchy</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Project</div>
+    <a href="#" data-page="changelog">Changelog</a>
+    <a href="#" data-page="contributing">Contributing</a>
+    <a href="#" data-page="security">Security</a>
+  </div>
+</nav>
+
+<!-- ═══ Main Content ═════════════════════════════════════════ -->
+<main class="main">
+
+  <!-- ─── Overview ──────────────────────────────────────── -->
+  <div class="page active" id="page-overview">
+    <pre class="hero-ascii"> █████  ██    ██ ████████  ██████  ██████  ███████ ██    ██
+██   ██ ██    ██    ██    ██    ██ ██   ██ ██       ██  ██
+███████ ██    ██    ██    ██    ██ ██████  ███████   ████
+██   ██ ██    ██    ██    ██    ██ ██           ██    ██
+██   ██  ██████     ██     ██████  ██      ███████    ██</pre>
+    <div class="hero-tagline">AI-powered incident diagnosis &bull; zero-trust</div>
+
+    <div class="badges">
+      <span class="badge accent">v0.2.2</span>
+      <span class="badge green">MIT License</span>
+      <span class="badge">Python 3.10+</span>
+      <span class="badge">Anthropic / OpenAI</span>
+    </div>
+
+    <p class="hero-desc">
+      <strong>AI-powered incident diagnosis for engineering teams.</strong> Pull production error logs and recent deploys, send them to an LLM, and get a structured root cause analysis in the terminal in under a minute. Zero-trust: your data never leaves your environment.
+    </p>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon">&#9889;</div>
+        <h4>30-Second Diagnosis</h4>
+        <p>Pull logs, correlate deploys, get a structured root cause with confidence score.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128274;</div>
+        <h4>Zero-Trust</h4>
+        <p>Your data stays in your environment. API keys in local .env, never committed.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#9881;</div>
+        <h4>Multi-Source</h4>
+        <p>CloudWatch, Datadog, GitHub, GitLab. All collectors run in parallel.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128172;</div>
+        <h4>Slack & Post-Mortem</h4>
+        <p>Post to Slack or generate markdown post-mortems instantly.</p>
+      </div>
+    </div>
+
+    <h2>Prerequisites</h2>
+    <table>
+      <thead><tr><th>Area</th><th>Requirement</th></tr></thead>
+      <tbody>
+        <tr><td><strong>AWS</strong></td><td>CloudWatch Logs access; credentials via <code>aws configure</code> or <code>AWS_PROFILE</code>; IAM: <code>logs:DescribeLogGroups</code>, <code>logs:StartQuery</code>, <code>logs:GetQueryResults</code>.</td></tr>
+        <tr><td><strong>Datadog</strong></td><td><em>Optional.</em> API key + Application key; site (e.g. <code>datadoghq.com</code>).</td></tr>
+        <tr><td><strong>GitHub</strong></td><td>Personal Access Token with <code>repo</code> scope.</td></tr>
+        <tr><td><strong>GitLab</strong></td><td><em>Optional.</em> Personal Access Token with <code>read_api</code> scope. Supports self-hosted.</td></tr>
+        <tr><td><strong>AI Provider</strong></td><td>OpenAI or Anthropic account + API key + credits.</td></tr>
+        <tr><td><strong>Local</strong></td><td>Python 3.10+, pip, terminal, internet.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <strong>You do not need:</strong> a server, Docker, a separate cloud account, a database, or admin/root. No changes to your AWS or app code.
+    </div>
+  </div>
+
+  <!-- ─── Installation ─────────────────────────────────── -->
+  <div class="page" id="page-installation">
+    <h1>Installation</h1>
+    <h3>From PyPI</h3>
+    <pre><code>pip install autopsy-cli          # core CLI (no TUI)
+pip install "autopsy-cli[tui]"   # + interactive terminal UI (requires textual)</code></pre>
+
+    <h3>From Source</h3>
+    <pre><code>git clone https://github.com/zaappy/autopsy.git && cd autopsy
+pip install -e ".[dev]"</code></pre>
+
+    <h3>Verify Installation</h3>
+    <pre><code>autopsy --version
+# autopsy  0.2.2
+# prompt   v1
+# python   3.12.x</code></pre>
+
+    <div class="callout info">
+      <strong>Dependencies:</strong> click, boto3, PyGithub, python-gitlab, rich, anthropic, openai, pydantic, pyyaml, questionary, python-dotenv.
+    </div>
+  </div>
+
+  <!-- ─── Quick Start ──────────────────────────────────── -->
+  <div class="page" id="page-quickstart">
+    <h1>Quick Start</h1>
+    <p>Three steps: <strong>install &rarr; init &rarr; diagnose</strong>.</p>
+
+    <h3>1. Configure</h3>
+    <pre><code>autopsy init      # Interactive wizard &mdash; creates ~/.autopsy/config.yaml + .env</code></pre>
+
+    <h3>2. Diagnose</h3>
+    <pre><code>autopsy diagnose  # Run full pipeline: collect &rarr; reduce &rarr; AI &rarr; render</code></pre>
+
+    <h3>3. Or Use the TUI</h3>
+    <pre><code>autopsy           # Interactive menu: Diagnose, History, Setup, Validate, Config</code></pre>
+
+    <h3>TUI Shortcuts</h3>
+    <table>
+      <thead><tr><th>Key</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><code>d</code></td><td>Diagnose</td></tr>
+        <tr><td><code>i</code></td><td>Init / Setup</td></tr>
+        <tr><td><code>v</code></td><td>Validate</td></tr>
+        <tr><td><code>c</code></td><td>Config</td></tr>
+        <tr><td><code>q</code></td><td>Quit</td></tr>
+        <tr><td><code>Esc</code></td><td>Back</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ─── Configuration ────────────────────────────────── -->
+  <div class="page" id="page-configuration">
+    <h1>Configuration</h1>
+    <p>After <code>autopsy init</code>, edit <code>~/.autopsy/config.yaml</code> or re-run the wizard. Credentials are stored in <code>~/.autopsy/.env</code>.</p>
+
+    <h3>Config Sections</h3>
+    <table>
+      <thead><tr><th>Section</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><strong>aws</strong></td><td>CloudWatch region, log groups, time window (minutes). Uses your AWS CLI credentials.</td></tr>
+        <tr><td><strong>datadog</strong></td><td><em>Optional.</em> Site, service/source filters, time window. Uses <code>DD_API_KEY</code> / <code>DD_APP_KEY</code>.</td></tr>
+        <tr><td><strong>github</strong></td><td>Repo (<code>owner/repo</code>), branch, number of recent commits. Uses <code>GITHUB_TOKEN</code>.</td></tr>
+        <tr><td><strong>gitlab</strong></td><td><em>Optional.</em> URL, project ID, branch, deploy count. Uses <code>GITLAB_TOKEN</code>. Can coexist with GitHub.</td></tr>
+        <tr><td><strong>ai</strong></td><td>Provider (<code>anthropic</code> or <code>openai</code>), model, API keys.</td></tr>
+        <tr><td><strong>slack</strong></td><td><em>Optional.</em> Webhook integration for posting diagnoses to Slack.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Managing Config</h3>
+    <pre><code>autopsy config show       # Print config (secrets masked)
+autopsy config show --reveal  # Show secrets
+autopsy config validate   # Check env vars and connectivity</code></pre>
+
+    <div class="callout warn">
+      <strong>Security:</strong> Add <code>~/.autopsy/.env</code> to <code>.gitignore</code>. Never commit credentials. If your home directory is backed up or synced, exclude <code>~/.autopsy/</code> or use env vars instead.
+    </div>
+  </div>
+
+  <!-- ─── How It Works ─────────────────────────────────── -->
+  <div class="page" id="page-how-it-works">
+    <h1>How It Works</h1>
+
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="pipeline-num">1</div>
+        <h5>Collect</h5>
+        <p>CloudWatch, Datadog, GitHub, GitLab &mdash; all run in parallel</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-num">2</div>
+        <h5>Reduce</h5>
+        <p>Log dedup, token budget, diff filters (code files only)</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-num">3</div>
+        <h5>Diagnose</h5>
+        <p>Single prompt to LLM &rarr; structured JSON response</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="pipeline-num">4</div>
+        <h5>Render</h5>
+        <p>Rich panels, JSON, post-mortem, or Slack webhook</p>
+      </div>
+    </div>
+
+    <h2>Pipeline Details</h2>
+
+    <h3>Step 1: Collect</h3>
+    <p>All configured collectors run <strong>in parallel</strong> by default using <code>asyncio.to_thread</code> with a <code>ThreadPoolExecutor</code> fallback for nested event loops. Each collector creates its own API client instance (thread-safe). Partial failures are handled gracefully &mdash; the pipeline continues with remaining sources.</p>
+    <ul>
+      <li><strong>CloudWatch:</strong> Logs Insights queries, error-level log extraction</li>
+      <li><strong>Datadog:</strong> Logs API search with site support (us1, eu1, us3, us5, ap1)</li>
+      <li><strong>GitHub:</strong> Last N commits + diffs via PyGitHub</li>
+      <li><strong>GitLab:</strong> Commits, diffs, MRs, deployment events via python-gitlab</li>
+    </ul>
+
+    <h3>Step 2: Reduce</h3>
+    <p>4-stage log reduction pipeline:</p>
+    <ol>
+      <li><strong>Query filter</strong> &mdash; regex at query level (~90% reduction)</li>
+      <li><strong>Deduplication</strong> &mdash; hash message templates, keep 1 + count (~60% reduction)</li>
+      <li><strong>Truncation</strong> &mdash; 500 char/entry, stack traces to top 5 frames (~40% reduction)</li>
+      <li><strong>Token budget</strong> &mdash; hard cap at 6000 tokens, FIFO eviction</li>
+    </ol>
+    <p>Smart diff reduction for GitHub/GitLab: file extension filtering, exclude patterns (lockfiles, generated), 200-line cap, 10-file-per-commit cap.</p>
+
+    <h3>Step 3: Diagnose</h3>
+    <p>The AI engine receives all collected data in a single prompt. The LLM returns structured JSON with root cause, correlated deploy, suggested fix, and timeline. Retries once on malformed JSON, falls back to raw text on second failure.</p>
+
+    <h3>Step 4: Render</h3>
+    <p>Output to Rich terminal panels (default), raw JSON (<code>--json</code>), markdown post-mortem (<code>--postmortem</code>), or Slack webhook (<code>--slack</code>).</p>
+  </div>
+
+  <!-- ─── CLI Reference ────────────────────────────────── -->
+  <div class="page" id="page-cli-reference">
+    <h1>CLI Reference</h1>
+    <table>
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>autopsy</code></td><td><strong>Interactive TUI</strong> &mdash; menu with Diagnose, Setup, Validate, Config</td></tr>
+        <tr><td><code>autopsy init</code></td><td>Interactive config wizard</td></tr>
+        <tr><td><code>autopsy init --slack</code></td><td>Configure only Slack integration</td></tr>
+        <tr><td><code>autopsy diagnose</code></td><td>Run full diagnosis pipeline</td></tr>
+        <tr><td><code>autopsy diagnose --json</code></td><td>Output raw JSON</td></tr>
+        <tr><td><code>autopsy diagnose --postmortem</code></td><td>Generate markdown post-mortem</td></tr>
+        <tr><td><code>autopsy diagnose --postmortem-path ./incident.md</code></td><td>Write post-mortem to explicit path</td></tr>
+        <tr><td><code>autopsy diagnose --slack</code></td><td>Post diagnosis to Slack webhook</td></tr>
+        <tr><td><code>autopsy diagnose --time-window 15</code></td><td>Override log window (minutes)</td></tr>
+        <tr><td><code>autopsy diagnose --log-group /aws/lambda/foo</code></td><td>Override log groups (repeatable)</td></tr>
+        <tr><td><code>autopsy diagnose --provider openai</code></td><td>Use OpenAI instead of Anthropic</td></tr>
+        <tr><td><code>autopsy diagnose --sequential</code></td><td>Run collectors sequentially (debugging)</td></tr>
+        <tr><td><code>autopsy history list</code></td><td>List saved diagnoses (newest first)</td></tr>
+        <tr><td><code>autopsy history show &lt;id&gt;</code></td><td>Show a saved diagnosis (short ID prefix OK)</td></tr>
+        <tr><td><code>autopsy history show &lt;id&gt; --postmortem</code></td><td>Generate post-mortem from saved diagnosis</td></tr>
+        <tr><td><code>autopsy history search "query"</code></td><td>Search saved diagnoses</td></tr>
+        <tr><td><code>autopsy history stats</code></td><td>Show history statistics</td></tr>
+        <tr><td><code>autopsy history export ./h.json --format json</code></td><td>Export history to JSON or CSV</td></tr>
+        <tr><td><code>autopsy config show</code></td><td>Print config (secrets masked)</td></tr>
+        <tr><td><code>autopsy config show --reveal</code></td><td>Show secrets unmasked</td></tr>
+        <tr><td><code>autopsy config validate</code></td><td>Check credentials and connectivity</td></tr>
+        <tr><td><code>autopsy version</code></td><td>CLI, prompt, and Python version</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      If <code>textual</code> is not installed, <code>autopsy</code> with no arguments prints help instead of the TUI.
+    </div>
+  </div>
+
+  <!-- ─── Collectors ───────────────────────────────────── -->
+  <div class="page" id="page-collectors">
+    <h1>Collectors</h1>
+    <p>All collectors implement the <code>BaseCollector</code> ABC and run <strong>in parallel</strong> by default. Each creates its own API client instance for thread safety.</p>
+
+    <h2>CloudWatch</h2>
+    <p>Uses <code>boto3</code> to run CloudWatch Logs Insights queries. Polls with backoff until results are ready. Applies the 4-stage log reduction pipeline (query filter, dedup, truncation, token budget).</p>
+    <ul>
+      <li><strong>Config:</strong> region, log_groups, time_window</li>
+      <li><strong>Auth:</strong> AWS CLI credentials (<code>aws configure</code>, <code>AWS_PROFILE</code>, instance role)</li>
+      <li><strong>Errors:</strong> <code>AWSAuthError</code>, <code>AWSPermissionError</code></li>
+    </ul>
+
+    <h2>Datadog</h2>
+    <p><em>Optional.</em> Uses the Datadog Logs Search API via <code>urllib.request</code>. Shares the same log reduction pipeline as CloudWatch.</p>
+    <ul>
+      <li><strong>Config:</strong> site (us1/eu1/us3/us5/ap1), service, source, time_window</li>
+      <li><strong>Auth:</strong> <code>DD_API_KEY</code> + <code>DD_APP_KEY</code> from <code>~/.autopsy/.env</code></li>
+      <li><strong>Behavior:</strong> Skips with warning when keys not set</li>
+    </ul>
+
+    <h2>GitHub</h2>
+    <p>Uses <code>PyGithub</code> to fetch recent commits and diffs. Smart diff reduction: filter by file extension, exclude lockfiles/generated, cap per file and per commit.</p>
+    <ul>
+      <li><strong>Config:</strong> repo, branch, deploy_count, token_env</li>
+      <li><strong>Auth:</strong> <code>GITHUB_TOKEN</code> (PAT with <code>repo</code> scope)</li>
+      <li><strong>Errors:</strong> <code>GitHubAuthError</code>, <code>GitHubRateLimitError</code></li>
+    </ul>
+
+    <h2>GitLab</h2>
+    <p><em>Optional.</em> Uses <code>python-gitlab</code> to pull commits, diffs, merge requests, and deployment events. Smart diff reduction matching GitHub patterns. Supports self-hosted GitLab instances.</p>
+    <ul>
+      <li><strong>Config:</strong> url, project_id, branch, deploy_count, token_env</li>
+      <li><strong>Auth:</strong> <code>GITLAB_TOKEN</code> (PAT with <code>read_api</code> scope)</li>
+      <li><strong>Errors:</strong> <code>GitLabAuthError</code>, <code>GitLabRateLimitError</code></li>
+      <li><strong>Behavior:</strong> Skips with warning when token not set. Can coexist with GitHub.</li>
+    </ul>
+
+    <h2>Parallel Execution</h2>
+    <p>By default, all active collectors run concurrently using <code>asyncio.to_thread</code> with <code>asyncio.gather</code>. If a running event loop is detected (Jupyter, IPython), falls back to <code>ThreadPoolExecutor</code>.</p>
+    <ul>
+      <li>Single collector &rarr; sequential path (no asyncio overhead)</li>
+      <li>Multiple collectors &rarr; parallel (wall-clock &asymp; slowest collector)</li>
+      <li>Partial failure &rarr; warn and continue with remaining sources</li>
+      <li>All fail &rarr; raises <code>CollectorError</code></li>
+      <li>Use <code>--sequential</code> flag for debugging</li>
+    </ul>
+  </div>
+
+  <!-- ─── AI Engine ────────────────────────────────────── -->
+  <div class="page" id="page-ai-engine">
+    <h1>AI Engine</h1>
+    <p>The orchestrator calls the <code>AIEngine</code> interface &mdash; never calls provider APIs directly.</p>
+
+    <h3>Supported Providers</h3>
+    <table>
+      <thead><tr><th>Provider</th><th>Default Model</th><th>API Key Env</th></tr></thead>
+      <tbody>
+        <tr><td>Anthropic</td><td>claude-sonnet-4-20250514</td><td><code>ANTHROPIC_API_KEY</code></td></tr>
+        <tr><td>OpenAI</td><td>gpt-4o</td><td><code>OPENAI_API_KEY</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>How It Works</h3>
+    <ol>
+      <li><strong>Build prompt:</strong> System prompt + user prompt from all collected data, labeled by source (<code>[Github]</code> / <code>[Gitlab]</code>)</li>
+      <li><strong>Call LLM:</strong> Single API call with structured JSON output instructions</li>
+      <li><strong>Parse response:</strong> Validate JSON against Pydantic models</li>
+      <li><strong>Retry:</strong> Once on malformed JSON. Falls back to raw text on second failure.</li>
+    </ol>
+
+    <h3>Output Structure</h3>
+    <p>The LLM returns a <code>DiagnosisResult</code> with four sections:</p>
+    <ul>
+      <li><strong>Root Cause</strong> &mdash; summary, category (code_change / config_change / infra / dependency / traffic / unknown), confidence (0.0&ndash;1.0), evidence</li>
+      <li><strong>Correlated Deploy</strong> &mdash; commit SHA, author, PR title, changed files</li>
+      <li><strong>Suggested Fix</strong> &mdash; immediate action + long-term recommendation</li>
+      <li><strong>Timeline</strong> &mdash; chronological event reconstruction</li>
+    </ul>
+  </div>
+
+  <!-- ─── Interface Contracts ──────────────────────────── -->
+  <div class="page" id="page-interfaces">
+    <h1>Interface Contracts</h1>
+    <p>Reference for all module boundaries. Every module communicates through these interfaces.</p>
+
+    <h2>BaseCollector <span class="version-badge">collectors/base.py</span></h2>
+    <pre><code>class CollectedData(BaseModel):
+    source: str              # "cloudwatch", "github", "gitlab"
+    data_type: str           # "logs" | "deploys" | "metrics"
+    entries: list[dict]      # Normalized data entries
+    time_range: tuple[datetime, datetime]  # (start_utc, end_utc)
+    raw_query: str           # The query used (for debugging/display)
+    entry_count: int         # Total before dedup/truncation
+    truncated: bool          # Whether data was reduced to fit budget
+
+class BaseCollector(ABC):
+    @abstractmethod
+    def validate_config(self, config: dict) -> bool:
+        """Verify credentials and connectivity."""
+
+    @abstractmethod
+    def collect(self, config: dict) -> CollectedData:
+        """Pull data and return normalized CollectedData."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Unique collector identifier."""</code></pre>
+
+    <h2>AIEngine <span class="version-badge">ai/engine.py</span></h2>
+    <pre><code>class AIEngine:
+    def __init__(self, provider, model, api_key, max_tokens, temperature): ...
+
+    def diagnose(self, collected_data: list[CollectedData]) -> DiagnosisResult:
+        """Build prompt, call LLM, parse response.
+        Retries once on malformed JSON. Falls back to raw text."""
+
+    def _build_prompt(self, collected_data) -> tuple[str, str]:
+        """Returns (system_prompt, user_prompt)."""
+
+    def _parse_response(self, raw: str) -> DiagnosisResult:
+        """Parse JSON into Pydantic model."""</code></pre>
+
+    <h2>DiagnosisOrchestrator <span class="version-badge">diagnosis.py</span></h2>
+    <pre><code>class DiagnosisOrchestrator:
+    def __init__(self, config: AutopsyConfig): ...
+
+    def run(
+        self,
+        *,
+        time_window: int | None = None,
+        log_groups: list[str] | None = None,
+        provider: str | None = None,
+        sequential: bool = False,
+    ) -> DiagnosisResult:
+        """Full pipeline:
+        1. Validate config
+        2. Collect data (parallel by default, sequential with flag)
+        3. Pass collected data to AI engine
+        4. Return DiagnosisResult
+
+        Partial failures: warn and continue.
+        All collectors fail: raises CollectorError."""</code></pre>
+
+    <h2>BaseRenderer <span class="version-badge">renderers/</span></h2>
+    <pre><code>class BaseRenderer(ABC):
+    @abstractmethod
+    def render(self, result: DiagnosisResult) -> None:
+        """Output the diagnosis."""</code></pre>
+  </div>
+
+  <!-- ─── Data Models ──────────────────────────────────── -->
+  <div class="page" id="page-models">
+    <h1>Data Models</h1>
+    <p>All models are Pydantic <code>BaseModel</code> subclasses. The AI engine returns <code>DiagnosisResult</code> as the top-level response.</p>
+
+    <h2>DiagnosisResult <span class="version-badge">ai/models.py</span></h2>
+    <pre><code>class RootCause(BaseModel):
+    summary: str
+    category: str    # code_change | config_change | infra | dependency | traffic | unknown
+    confidence: float  # 0.0 - 1.0
+    evidence: list[str]
+
+class CorrelatedDeploy(BaseModel):
+    commit_sha: str | None = None
+    author: str | None = None
+    pr_title: str | None = None
+    changed_files: list[str] = []
+
+class SuggestedFix(BaseModel):
+    immediate: str
+    long_term: str
+
+class TimelineEvent(BaseModel):
+    time: str
+    event: str
+
+class DiagnosisResult(BaseModel):
+    root_cause: RootCause
+    correlated_deploy: CorrelatedDeploy
+    suggested_fix: SuggestedFix
+    timeline: list[TimelineEvent]
+    prompt_version: str = "v1"
+    raw_response: str | None = None  # Populated on parse failure fallback</code></pre>
+  </div>
+
+  <!-- ─── Error Hierarchy ──────────────────────────────── -->
+  <div class="page" id="page-errors">
+    <h1>Error Hierarchy</h1>
+    <p>All custom exceptions inherit from <code>SignalFXError</code>, which carries a <code>message</code>, optional <code>hint</code>, and optional <code>docs_url</code>.</p>
+
+    <div class="tree">
+      <div><strong>SignalFXError</strong> (base)</div>
+      <div class="indent"><strong>ConfigError</strong></div>
+      <div class="indent2">ConfigNotFoundError</div>
+      <div class="indent2">ConfigValidationError</div>
+      <div class="indent"><strong>CollectorError</strong></div>
+      <div class="indent2">AWSAuthError</div>
+      <div class="indent2">AWSPermissionError</div>
+      <div class="indent2">GitHubAuthError</div>
+      <div class="indent2">GitHubRateLimitError</div>
+      <div class="indent2">GitLabAuthError</div>
+      <div class="indent2">GitLabRateLimitError</div>
+      <div class="indent2">NoDataError</div>
+      <div class="indent"><strong>AIError</strong></div>
+      <div class="indent2">AIAuthError</div>
+      <div class="indent2">AIRateLimitError</div>
+      <div class="indent2">AIResponseError</div>
+      <div class="indent2">AITimeoutError</div>
+      <div class="indent"><strong>RenderError</strong></div>
+    </div>
+
+    <h3>Error Display</h3>
+    <p>The CLI renders errors in a consistent pattern:</p>
+    <pre><code>&#10060; CloudWatch query timeout after 60s.
+&#9989; Check that the log group exists: aws logs describe-log-groups
+Docs: https://docs.aws.amazon.com/...</code></pre>
+    <p>Red for the error, green for the hint, dim for docs URL.</p>
+  </div>
+
+  <!-- ─── Changelog ────────────────────────────────────── -->
+  <div class="page" id="page-changelog">
+    <h1>Changelog</h1>
+    <p>Based on <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>. Follows <a href="https://semver.org/">Semantic Versioning</a>.</p>
+
+    <h2>Unreleased</h2>
+    <h3>Added</h3>
+    <ul>
+      <li><strong>GitLab collector:</strong> optional integration via <code>python-gitlab</code> &mdash; commits, diffs, merge requests, deployment events; supports self-hosted; smart diff reduction; skips with warning when token missing; coexists with GitHub.</li>
+      <li>Init wizard supports optional GitLab config (URL, project ID, branch, deploy count) and writes <code>GITLAB_TOKEN</code> to <code>~/.autopsy/.env</code>.</li>
+      <li><code>autopsy config validate</code> checks GitLab when configured.</li>
+      <li>AI prompts label deploy entries by source (<code>[Github]</code> / <code>[Gitlab]</code>) for multi-source correlation.</li>
+      <li><strong>Datadog log collector:</strong> optional integration with Datadog Logs API; supports us1/eu1/us3/us5/ap1; API/App keys via env; skips with warning when keys missing.</li>
+      <li>Shared log reduction pipeline (dedup, truncation, token budget) used by CloudWatch and Datadog.</li>
+      <li>Init wizard supports optional Datadog config (site, service, source) and writes <code>DD_API_KEY</code> / <code>DD_APP_KEY</code> to <code>~/.autopsy/.env</code>.</li>
+      <li><code>autopsy config validate</code> checks Datadog when configured.</li>
+      <li><strong>Parallel collector execution:</strong> all collectors run concurrently by default using <code>asyncio.to_thread</code>, with <code>ThreadPoolExecutor</code> fallback. Partial failures handled gracefully. Per-collector timing tracked.</li>
+      <li><code>autopsy diagnose --sequential</code> flag to force sequential collection for debugging.</li>
+    </ul>
+
+    <h2>0.2.2 &mdash; 2026-03-10</h2>
+    <h3>Added</h3>
+    <ul>
+      <li>Diagnosis history with local SQLite storage: <code>autopsy history list|show|search|stats|clear|export</code>.</li>
+      <li>Markdown post-mortem via <code>autopsy diagnose --postmortem</code> and <code>autopsy history show &lt;id&gt; --postmortem</code>.</li>
+      <li>Slack webhook output via <code>autopsy diagnose --slack</code>.</li>
+      <li>Slack-only setup flow via <code>autopsy init --slack</code>.</li>
+    </ul>
+    <h3>Changed</h3>
+    <ul>
+      <li><code>autopsy config validate</code> includes optional Slack status.</li>
+      <li>Interactive menu labels include Slack in descriptions.</li>
+      <li>Runtime package version alignment for CLI and renderer outputs.</li>
+    </ul>
+
+    <h2>0.2.1 &mdash; 2026-03-09</h2>
+    <h3>Changed</h3>
+    <ul>
+      <li>Maintenance and release updates.</li>
+    </ul>
+
+    <h2>0.2.0</h2>
+    <h3>Added</h3>
+    <ul>
+      <li>Interactive TUI with menu: Diagnose, Setup, Validate, Config.</li>
+      <li><code>autopsy init</code> config wizard.</li>
+      <li>CloudWatch Logs Insights and GitHub collectors.</li>
+      <li>AI diagnosis engine (Anthropic / OpenAI) with structured JSON.</li>
+      <li>Terminal and JSON renderers.</li>
+      <li>CLI commands: <code>autopsy</code>, <code>autopsy diagnose</code>, <code>autopsy config show</code>, <code>autopsy config validate</code>.</li>
+    </ul>
+  </div>
+
+  <!-- ─── Contributing ─────────────────────────────────── -->
+  <div class="page" id="page-contributing">
+    <h1>Contributing</h1>
+
+    <h2>Development Setup</h2>
+    <ol>
+      <li><strong>Fork and clone</strong>
+        <pre><code>git clone https://github.com/YOUR_USERNAME/autopsy.git && cd autopsy</code></pre>
+      </li>
+      <li><strong>Create a virtual environment</strong>
+        <pre><code>python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate</code></pre>
+      </li>
+      <li><strong>Install with dev dependencies</strong>
+        <pre><code>pip install -e ".[dev]"</code></pre>
+      </li>
+      <li><strong>Configure</strong> (optional)
+        <pre><code>autopsy init</code></pre>
+      </li>
+    </ol>
+
+    <h2>Code Style</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>Command</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>Ruff</td><td><code>ruff check .</code></td><td>Linting</td></tr>
+        <tr><td>mypy</td><td><code>mypy autopsy</code></td><td>Type checking (strict)</td></tr>
+        <tr><td>pytest</td><td><code>pytest -v</code></td><td>All tests must pass</td></tr>
+      </tbody>
+    </table>
+    <p>CI runs <code>ruff check .</code> and <code>pytest</code> on every push and pull request.</p>
+
+    <h2>Project Layout</h2>
+    <table>
+      <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>autopsy/cli.py</code></td><td>CLI entrypoint; no business logic</td></tr>
+        <tr><td><code>autopsy/collectors/</code></td><td>CloudWatch, Datadog, GitHub, GitLab</td></tr>
+        <tr><td><code>autopsy/ai/</code></td><td>AI engine (prompts, models, diagnosis)</td></tr>
+        <tr><td><code>autopsy/renderers/</code></td><td>Terminal and JSON output</td></tr>
+        <tr><td><code>autopsy/config.py</code></td><td>Config loading and validation</td></tr>
+        <tr><td><code>tests/</code></td><td>Pytest tests (including VCR for HTTP)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>Separation of concerns:</strong> Collectors, AI, and renderers are independent of the CLI layer.
+    </div>
+
+    <h2>Submitting Changes</h2>
+    <ol>
+      <li>Create a branch from <code>main</code> (e.g. <code>fix/cloudwatch-timeout</code>, <code>feat/add-datadog</code>)</li>
+      <li>Make changes and add/update tests</li>
+      <li>Run <code>ruff check .</code> and <code>pytest</code> locally</li>
+      <li>Commit with clear messages</li>
+      <li>Push to your fork and open a PR against <code>main</code></li>
+    </ol>
+
+    <h2>Reporting Issues</h2>
+    <p>Use <a href="https://github.com/zaappy/autopsy/issues">GitHub Issues</a>. Include OS, Python version, steps to reproduce, and expected vs actual behavior.</p>
+  </div>
+
+  <!-- ─── Security ─────────────────────────────────────── -->
+  <div class="page" id="page-security">
+    <h1>Security Policy</h1>
+
+    <h2>Supported Versions</h2>
+    <table>
+      <thead><tr><th>Version</th><th>Supported</th></tr></thead>
+      <tbody>
+        <tr><td>0.2.x</td><td style="color: var(--green);">Yes</td></tr>
+        <tr><td>&lt; 0.2</td><td style="color: var(--accent);">No</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Reporting a Vulnerability</h2>
+    <div class="callout warn">
+      <strong>Do not open a public GitHub issue for security-sensitive bugs.</strong>
+    </div>
+    <p><strong>Email:</strong> <a href="mailto:zaappy@users.noreply.github.com">zaappy@users.noreply.github.com</a> with a clear description, steps to reproduce, and impact.</p>
+    <p>We'll acknowledge receipt and follow up with fix timeline and disclosure plan. Please allow reasonable time before public disclosure.</p>
+
+    <h2>What We Care About</h2>
+    <ul>
+      <li>Credential or token leakage (config, env, or logs)</li>
+      <li>Insecure handling of <code>~/.autopsy/.env</code> or API keys</li>
+      <li>Issues in data sent to/from third-party APIs (AWS, GitHub, GitLab, AI providers)</li>
+      <li>Any behavior that could expose user or deployment data</li>
+    </ul>
+  </div>
+
+</main>
+
+<!-- ═══ JavaScript ═══════════════════════════════════════════ -->
+<script>
+  // ── Page navigation ───────────────────────────────────
+  function showPage(id) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.sidebar a[data-page]').forEach(a => a.classList.remove('active'));
+    const page = document.getElementById('page-' + id);
+    if (page) page.classList.add('active');
+    const link = document.querySelector('.sidebar a[data-page="' + id + '"]');
+    if (link) link.classList.add('active');
+    window.scrollTo(0, 0);
+    // Close mobile sidebar
+    document.getElementById('sidebar').classList.remove('open');
+    // Update URL hash
+    history.replaceState(null, '', '#' + id);
+  }
+
+  // Wire sidebar links
+  document.querySelectorAll('.sidebar a[data-page]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      showPage(a.dataset.page);
+    });
+  });
+
+  // ── Theme toggle ──────────────────────────────────────
+  function toggleTheme() {
+    const html = document.documentElement;
+    const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    localStorage.setItem('autopsy-theme', next);
+    document.querySelector('.theme-toggle').textContent = next === 'dark' ? '\u263D' : '\u2600';
+  }
+
+  // Restore saved theme
+  const saved = localStorage.getItem('autopsy-theme');
+  if (saved) {
+    document.documentElement.dataset.theme = saved;
+    document.querySelector('.theme-toggle').textContent = saved === 'dark' ? '\u263D' : '\u2600';
+  }
+
+  // ── Mobile sidebar ────────────────────────────────────
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+  }
+
+  // ── Restore page from hash ────────────────────────────
+  const hash = location.hash.replace('#', '');
+  if (hash) showPage(hash);
+</script>
+
+</body>
+</html>

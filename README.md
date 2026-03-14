@@ -128,6 +128,7 @@ autopsy config validate   # Check env vars and connectivity
 | `autopsy diagnose --time-window 15` | Override log window (minutes) |
 | `autopsy diagnose --log-group /aws/lambda/foo` | Override log groups (repeatable) |
 | `autopsy diagnose --provider openai` | Use OpenAI instead of Anthropic |
+| `autopsy diagnose --sequential` | Run collectors sequentially instead of in parallel (debugging) |
 | `autopsy history list` | List saved diagnoses (newest first) |
 | `autopsy history show <id>` | Show a saved diagnosis (supports short ID prefix) |
 | `autopsy history show <id> --postmortem` | Generate post-mortem from saved diagnosis |
