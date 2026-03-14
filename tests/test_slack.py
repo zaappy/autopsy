@@ -11,6 +11,7 @@ from autopsy.ai.models import (
     CorrelatedDeploy,
     DiagnosisResult,
     RootCause,
+    SourceInfo,
     SuggestedFix,
     TimelineEvent,
 )
@@ -71,6 +72,35 @@ def test_build_blocks_with_full_result_structure() -> None:
     assert "Root Cause" in text
     assert "92% confidence" in text
     assert "`code_change`" in text
+
+
+def test_build_blocks_multi_log_sources_includes_sources_line() -> None:
+    r = SlackRenderer("https://hooks.slack.test")
+    result = _sample_result()
+    result.sources = [
+        SourceInfo(name="cloudwatch", data_type="logs", entry_count=23),
+        SourceInfo(name="datadog", data_type="logs", entry_count=15),
+    ]
+    blocks = r._build_blocks(result)
+    blob = json.dumps(blocks)
+    assert "*Sources:*" in blob
+    assert "Cloudwatch" in blob
+    assert "Datadog" in blob
+
+
+def test_build_blocks_cw_github_no_sources_line() -> None:
+    """One log + one deploy: same Slack shape as before (no Sources context)."""
+    r = SlackRenderer("https://hooks.slack.test")
+    result = _sample_result()
+    result.sources = [
+        SourceInfo(name="cloudwatch", data_type="logs", entry_count=10),
+        SourceInfo(name="github", data_type="deploys", entry_count=5),
+    ]
+    blocks = r._build_blocks(result)
+    assert blocks[0]["type"] == "header"
+    root_section = blocks[2]
+    assert root_section["type"] == "section"
+    assert "*Sources:*" not in json.dumps(blocks)
 
 
 def test_build_blocks_without_deploy_omits_deploy_section() -> None:

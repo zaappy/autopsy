@@ -136,6 +136,17 @@ class PostMortemRenderer:
         lines.append(f"- **Confidence:** {rc.confidence * 100:.0f}%")
         lines.append("- **Detection Method:** Automated diagnosis via AUTOPSY CLI")
         lines.append("")
+        if len(result.sources) > 1:
+            lines.append("## Data Sources")
+            lines.append("")
+            lines.append("| Source | Type | Entries |")
+            lines.append("|--------|------|---------|")
+            for src in result.sources:
+                lines.append(
+                    f"| {src.name.title()} | {src.data_type.title()} | {src.entry_count} |"
+                )
+            lines.append("")
+
         lines.append("---")
         lines.append("")
         lines.append("## Timeline")

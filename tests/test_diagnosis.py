@@ -14,6 +14,7 @@ from autopsy.ai.models import (
     CorrelatedDeploy,
     DiagnosisResult,
     RootCause,
+    SourceInfo,
     SuggestedFix,
     TimelineEvent,
 )
@@ -143,12 +144,12 @@ class TestOrchestratorRun:
 
         mock_cw = MagicMock()
         mock_cw.validate_config.return_value = True
-        mock_cw.collect.return_value = MagicMock()
+        mock_cw.collect.return_value = MagicMock(source="cloudwatch", data_type="logs", entries=[])
         mock_cw_cls.return_value = mock_cw
 
         mock_gh = MagicMock()
         mock_gh.validate_config.return_value = True
-        mock_gh.collect.return_value = MagicMock()
+        mock_gh.collect.return_value = MagicMock(source="github", data_type="deploys", entries=[])
         mock_gh_cls.return_value = mock_gh
 
         mock_engine_cls.return_value.diagnose.return_value = _sample_result()
@@ -285,6 +286,75 @@ class TestTerminalRenderer:
         r = TerminalRenderer()
         r.render(sample_diagnosis_result)
 
+    def test_sources_panel_multi(self, sample_diagnosis_result: DiagnosisResult) -> None:
+        """Sources panel when multiple log sources (or multiple deploy)."""
+        sample_diagnosis_result.sources = [
+            SourceInfo(name="cloudwatch", data_type="logs", entry_count=23),
+            SourceInfo(name="datadog", data_type="logs", entry_count=15),
+            SourceInfo(name="github", data_type="deploys", entry_count=5),
+        ]
+        r = TerminalRenderer()
+        renderables = r.get_renderables(sample_diagnosis_result)
+        from rich.panel import Panel
+
+        first = renderables[0]
+        assert isinstance(first, Panel)
+        assert first.title is not None
+        # Panel title should contain "SOURCES"
+        from rich.text import Text
+
+        title_text = first.title.plain if isinstance(first.title, Text) else str(first.title)
+        assert "SOURCES" in title_text
+
+    def test_sources_panel_single(self, sample_diagnosis_result: DiagnosisResult) -> None:
+        """No sources panel when only 1 source."""
+        sample_diagnosis_result.sources = [
+            SourceInfo(name="cloudwatch", data_type="logs", entry_count=23),
+        ]
+        r = TerminalRenderer()
+        renderables = r.get_renderables(sample_diagnosis_result)
+        from rich.panel import Panel
+        from rich.text import Text
+
+        for renderable in renderables:
+            if isinstance(renderable, Panel) and renderable.title:
+                t = renderable.title
+                title_text = t.plain if isinstance(t, Text) else str(t)
+                assert "SOURCES" not in title_text
+
+    def test_sources_panel_empty(self, sample_diagnosis_result: DiagnosisResult) -> None:
+        """No sources panel when 0 sources."""
+        sample_diagnosis_result.sources = []
+        r = TerminalRenderer()
+        renderables = r.get_renderables(sample_diagnosis_result)
+        from rich.panel import Panel
+        from rich.text import Text
+
+        for renderable in renderables:
+            if isinstance(renderable, Panel) and renderable.title:
+                t = renderable.title
+                title_text = t.plain if isinstance(t, Text) else str(t)
+                assert "SOURCES" not in title_text
+
+    def test_sources_panel_cw_github_no_panel(
+        self, sample_diagnosis_result: DiagnosisResult
+    ) -> None:
+        """Classic CloudWatch + GitHub: no SOURCES panel (backward compatible)."""
+        sample_diagnosis_result.sources = [
+            SourceInfo(name="cloudwatch", data_type="logs", entry_count=10),
+            SourceInfo(name="github", data_type="deploys", entry_count=3),
+        ]
+        r = TerminalRenderer()
+        renderables = r.get_renderables(sample_diagnosis_result)
+        from rich.panel import Panel
+        from rich.text import Text
+
+        for renderable in renderables:
+            if isinstance(renderable, Panel) and renderable.title:
+                t = renderable.title
+                title_text = t.plain if isinstance(t, Text) else str(t)
+                assert "SOURCES" not in title_text
+
 
 class TestJSONRenderer:
     """JSON renderer outputs valid JSON."""
@@ -299,6 +369,25 @@ class TestJSONRenderer:
         assert '"summary"' in out
         assert '"correlated_deploy"' in out
         assert "\n  " in out
+
+    def test_json_output_includes_sources(
+        self, sample_diagnosis_result: DiagnosisResult, capsys: pytest.CaptureFixture
+    ) -> None:
+        """JSON output includes sources array when populated."""
+        import json
+
+        sample_diagnosis_result.sources = [
+            SourceInfo(name="cloudwatch", data_type="logs", entry_count=23),
+            SourceInfo(name="github", data_type="deploys", entry_count=5),
+        ]
+        r = JSONRenderer()
+        r.render(sample_diagnosis_result)
+        out, _ = capsys.readouterr()
+        data = json.loads(out)
+        assert "sources" in data
+        assert len(data["sources"]) == 2
+        assert data["sources"][0]["name"] == "cloudwatch"
+        assert data["sources"][1]["entry_count"] == 5
 
 
 # ---------------------------------------------------------------------------
@@ -506,16 +595,19 @@ class TestParallelCollection:
         mock_cw = MagicMock()
         mock_cw.validate_config.return_value = True
         mock_cw.collect.return_value = MagicMock(
-            source="cloudwatch", data_type="logs"
+            source="cloudwatch", data_type="logs", entries=[]
         )
         mock_cw_cls.return_value = mock_cw
 
-        # Remove GitHub from collectors by not returning it
-        mock_gh_cls.return_value = MagicMock()
+        mock_gh = MagicMock()
+        mock_gh.validate_config.return_value = True
+        mock_gh.collect.return_value = MagicMock(
+            source="github", data_type="deploys", entries=[]
+        )
+        mock_gh_cls.return_value = mock_gh
 
         mock_engine_cls.return_value.diagnose.return_value = _sample_result()
 
-        # Config with no github — only AWS
         config = _minimal_config()
         orch = DiagnosisOrchestrator(config)
 
@@ -712,3 +804,180 @@ class TestParallelCollection:
         mock_orch.run.assert_called_once()
         call_kwargs = mock_orch.run.call_args[1]
         assert call_kwargs["sequential"] is True
+
+
+# ---------------------------------------------------------------------------
+# Multi-source orchestrator tests
+# ---------------------------------------------------------------------------
+
+
+class TestMultiSourceOrchestrator:
+    """Tests for multi-source diagnosis pipeline."""
+
+    @patch("autopsy.diagnosis.AIEngine")
+    @patch("autopsy.diagnosis.GitHubCollector")
+    @patch("autopsy.diagnosis.CloudWatchCollector")
+    @patch("autopsy.diagnosis.DatadogCollector")
+    def test_multi_source_sources_populated(
+        self,
+        mock_dd_cls: MagicMock,
+        mock_cw_cls: MagicMock,
+        mock_gh_cls: MagicMock,
+        mock_engine_cls: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """result.sources is populated with SourceInfo for each collector."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp-test")
+        monkeypatch.setenv("DD_API_KEY", "dd-test")
+        monkeypatch.setenv("DD_APP_KEY", "dd-app-test")
+
+        mock_cw = MagicMock()
+        mock_cw.validate_config.return_value = True
+        cw_data = MagicMock(source="cloudwatch", data_type="logs", entries=[1, 2, 3])
+        mock_cw.collect.return_value = cw_data
+        mock_cw_cls.return_value = mock_cw
+
+        mock_dd = MagicMock()
+        mock_dd.validate_config.return_value = True
+        dd_data = MagicMock(source="datadog", data_type="logs", entries=[1, 2])
+        mock_dd.collect.return_value = dd_data
+        mock_dd_cls.return_value = mock_dd
+
+        mock_gh = MagicMock()
+        mock_gh.validate_config.return_value = True
+        gh_data = MagicMock(source="github", data_type="deploys", entries=[1])
+        mock_gh.collect.return_value = gh_data
+        mock_gh_cls.return_value = mock_gh
+
+        mock_engine_cls.return_value.diagnose.return_value = _sample_result()
+
+        config = AutopsyConfig(
+            aws=AWSConfig(region="us-east-1", log_groups=["/test"], time_window=30),
+            datadog=DatadogConfig(site="us1", time_window=30),
+            github=GitHubConfig(
+                repo="o/r",
+                token_env="GITHUB_TOKEN",
+                deploy_count=5,
+                branch="main",
+            ),
+            ai=AIConfig(provider="anthropic", model="claude-sonnet-4-20250514"),
+            output=OutputConfig(),
+        )
+        orch = DiagnosisOrchestrator(config)
+        result = orch.run()
+
+        assert len(result.sources) == 3
+        names = {s.name for s in result.sources}
+        assert names == {"cloudwatch", "datadog", "github"}
+        cw_source = next(s for s in result.sources if s.name == "cloudwatch")
+        assert cw_source.entry_count == 3
+        assert cw_source.data_type == "logs"
+
+    @patch("autopsy.diagnosis.AIEngine")
+    @patch("autopsy.diagnosis.GitHubCollector")
+    @patch("autopsy.diagnosis.CloudWatchCollector")
+    def test_source_filter_single(
+        self,
+        mock_cw_cls: MagicMock,
+        mock_gh_cls: MagicMock,
+        mock_engine_cls: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """source_filter limits to specific collectors."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp-test")
+
+        mock_cw = MagicMock()
+        mock_cw.validate_config.return_value = True
+        mock_cw.collect.return_value = MagicMock(source="cloudwatch", data_type="logs", entries=[1])
+        mock_cw_cls.return_value = mock_cw
+
+        mock_gh = MagicMock()
+        mock_gh.validate_config.return_value = True
+        mock_gh.collect.return_value = MagicMock(source="github", data_type="deploys", entries=[1])
+        mock_gh_cls.return_value = mock_gh
+
+        mock_engine_cls.return_value.diagnose.return_value = _sample_result()
+
+        config = _minimal_config()
+        orch = DiagnosisOrchestrator(config)
+        orch.run(source_filter=("cloudwatch",))
+
+        call_data = mock_engine_cls.return_value.diagnose.call_args[0][0]
+        sources = [d.source for d in call_data]
+        assert "cloudwatch" in sources
+        assert "github" not in sources
+
+    def test_source_filter_invalid(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Invalid source_filter raises ConfigError with hint."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp-test")
+
+        from autopsy.utils.errors import ConfigError
+
+        config = _minimal_config()
+        orch = DiagnosisOrchestrator(config)
+        with pytest.raises(ConfigError, match="not configured"):
+            orch.run(source_filter=("elasticsearch",))
+
+    @patch("autopsy.diagnosis.AIEngine")
+    @patch("autopsy.diagnosis.GitHubCollector")
+    @patch("autopsy.diagnosis.CloudWatchCollector")
+    def test_source_filter_multiple(
+        self,
+        mock_cw_cls: MagicMock,
+        mock_gh_cls: MagicMock,
+        mock_engine_cls: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """source_filter with multiple values selects those collectors."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp-test")
+
+        mock_cw = MagicMock()
+        mock_cw.validate_config.return_value = True
+        mock_cw.collect.return_value = MagicMock(source="cloudwatch", data_type="logs", entries=[1])
+        mock_cw_cls.return_value = mock_cw
+
+        mock_gh = MagicMock()
+        mock_gh.validate_config.return_value = True
+        mock_gh.collect.return_value = MagicMock(source="github", data_type="deploys", entries=[1])
+        mock_gh_cls.return_value = mock_gh
+
+        mock_engine_cls.return_value.diagnose.return_value = _sample_result()
+
+        config = _minimal_config()
+        orch = DiagnosisOrchestrator(config)
+        orch.run(source_filter=("cloudwatch", "github"))
+
+        call_data = mock_engine_cls.return_value.diagnose.call_args[0][0]
+        assert len(call_data) == 2
+
+    @patch("autopsy.diagnosis.DiagnosisOrchestrator")
+    @patch("autopsy.config.load_config")
+    def test_cli_source_flag(
+        self,
+        mock_load_config: MagicMock,
+        mock_orch_cls: MagicMock,
+    ) -> None:
+        """CLI --source flag is wired through to orchestrator.run()."""
+        from click.testing import CliRunner
+
+        from autopsy.cli import cli
+
+        mock_load_config.return_value = _minimal_config()
+        mock_orch = MagicMock()
+        mock_orch.run.return_value = _sample_result()
+        mock_orch_cls.return_value = mock_orch
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["diagnose", "--source", "cloudwatch", "--source", "github"],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_orch.run.call_args[1]
+        assert call_kwargs["source_filter"] == ("cloudwatch", "github")

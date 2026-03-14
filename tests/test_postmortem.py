@@ -6,6 +6,7 @@ from autopsy.ai.models import (
     CorrelatedDeploy,
     DiagnosisResult,
     RootCause,
+    SourceInfo,
     SuggestedFix,
     TimelineEvent,
 )
@@ -58,6 +59,28 @@ def test_render_returns_valid_markdown(tmp_path) -> None:
     assert "**Time Window:** 30 minutes" in md
     assert "Diagnosis Duration:" in md
     assert "This report was auto-generated" in md
+
+
+def test_postmortem_single_source_no_data_sources_table() -> None:
+    """One collector: no Data Sources section (matches classic CW+GH)."""
+    r = PostMortemRenderer()
+    result = _minimal_result()
+    result.sources = [SourceInfo(name="cloudwatch", data_type="logs", entry_count=5)]
+    md = r.render(result)
+    assert "## Data Sources" not in md
+
+
+def test_postmortem_multi_source_has_data_sources_table() -> None:
+    r = PostMortemRenderer()
+    result = _minimal_result()
+    result.sources = [
+        SourceInfo(name="cloudwatch", data_type="logs", entry_count=5),
+        SourceInfo(name="datadog", data_type="logs", entry_count=3),
+    ]
+    md = r.render(result)
+    assert "## Data Sources" in md
+    assert "| Cloudwatch | Logs | 5 |" in md
+    assert "| Datadog | Logs | 3 |" in md
 
 
 def test_render_minimal_result_without_deploy_or_timeline() -> None:

@@ -220,6 +220,7 @@ class TestBuildUserPrompt:
         prompt = build_user_prompt([_logs_data(), _deploys_data()])
         assert "ERROR LOGS" in prompt
         assert "RECENT DEPLOYS" in prompt
+        assert "CROSS-SOURCE ANALYSIS INSTRUCTIONS" in prompt
 
     def test_empty_data(self) -> None:
         prompt = build_user_prompt([])
@@ -350,6 +351,150 @@ class TestDiagnoseFallback:
 # ---------------------------------------------------------------------------
 # AIEngine.diagnose — error handling
 # ---------------------------------------------------------------------------
+
+
+class TestMultiSourcePromptBuilding:
+    """Verify build_user_prompt groups and labels data by source."""
+
+    @staticmethod
+    def _make_logs(source: str, entries: list[dict] | None = None,
+                   *, truncated: bool = False, entry_count: int = 5) -> CollectedData:
+        now = datetime(2026, 3, 6, 10, 0, 0, tzinfo=timezone.utc)
+        return CollectedData(
+            source=source,
+            data_type="logs",
+            entries=entries or [
+                {"@timestamp": "2026-03-06T10:00:00Z",
+                 "@message": f"ERROR from {source}", "occurrences": 1},
+            ],
+            time_range=(now, now),
+            raw_query=f"query for {source}",
+            entry_count=entry_count,
+            truncated=truncated,
+        )
+
+    @staticmethod
+    def _make_deploys(source: str, entries: list[dict] | None = None) -> CollectedData:
+        now = datetime(2026, 3, 6, 10, 0, 0, tzinfo=timezone.utc)
+        return CollectedData(
+            source=source,
+            data_type="deploys",
+            entries=entries or [
+                {"sha": "abc1234def5678", "author": "dev", "timestamp": "2026-03-06T09:55:00Z",
+                 "message": f"commit from {source}"},
+            ],
+            time_range=(now, now),
+            raw_query=f"last 5 commits on {source}",
+            entry_count=1,
+            truncated=False,
+        )
+
+    def test_build_prompt_single_log_source(self) -> None:
+        prompt = build_user_prompt([self._make_logs("cloudwatch")])
+        assert "=== ERROR LOGS ===" in prompt
+        assert "--- Source: Cloudwatch ---" in prompt
+        assert "CROSS-SOURCE ANALYSIS" not in prompt  # single collector
+
+    def test_build_prompt_logs_plus_deploy_cross_source(self) -> None:
+        """CloudWatch + GitHub (one log + one deploy): correlate across systems."""
+        prompt = build_user_prompt([
+            self._make_logs("cloudwatch"),
+            self._make_deploys("github"),
+        ])
+        assert "CROSS-SOURCE ANALYSIS INSTRUCTIONS" in prompt
+        assert "cloudwatch, github" in prompt
+
+    def test_build_prompt_deploy_files_fallback(self) -> None:
+        """Deploy entry with bare files list (no diffs) still lists files."""
+        now = datetime(2026, 3, 6, 10, 0, 0, tzinfo=timezone.utc)
+        deploys = CollectedData(
+            source="github",
+            data_type="deploys",
+            entries=[
+                {
+                    "sha": "abc1234def5678",
+                    "author": "dev",
+                    "timestamp": "2026-03-06T09:55:00Z",
+                    "message": "fix",
+                    "files": ["src/Foo.java", "src/Bar.java"],
+                },
+            ],
+            time_range=(now, now),
+            raw_query="main",
+            entry_count=1,
+            truncated=False,
+        )
+        prompt = build_user_prompt([deploys])
+        assert "Files: src/Foo.java, src/Bar.java" in prompt
+
+    def test_build_prompt_multi_log_sources(self) -> None:
+        prompt = build_user_prompt([
+            self._make_logs("cloudwatch"),
+            self._make_logs("datadog"),
+        ])
+        assert "--- Source: Cloudwatch ---" in prompt
+        assert "--- Source: Datadog ---" in prompt
+        assert "CROSS-SOURCE ANALYSIS INSTRUCTIONS" in prompt
+
+    def test_build_prompt_multi_deploy_sources(self) -> None:
+        prompt = build_user_prompt([
+            self._make_deploys("github"),
+            self._make_deploys("gitlab"),
+        ])
+        assert "--- Source: Github ---" in prompt
+        assert "--- Source: Gitlab ---" in prompt
+        assert "CROSS-SOURCE ANALYSIS INSTRUCTIONS" in prompt
+
+    def test_build_prompt_no_logs(self) -> None:
+        prompt = build_user_prompt([self._make_deploys("github")])
+        assert "No log data available" in prompt
+
+    def test_build_prompt_no_deploys(self) -> None:
+        prompt = build_user_prompt([self._make_logs("cloudwatch")])
+        assert "No deployment data available" in prompt
+
+    def test_build_prompt_full_multi(self) -> None:
+        prompt = build_user_prompt([
+            self._make_logs("cloudwatch"),
+            self._make_logs("datadog"),
+            self._make_deploys("github"),
+            self._make_deploys("gitlab"),
+        ])
+        assert "--- Source: Cloudwatch ---" in prompt
+        assert "--- Source: Datadog ---" in prompt
+        assert "--- Source: Github ---" in prompt
+        assert "--- Source: Gitlab ---" in prompt
+        assert "CROSS-SOURCE ANALYSIS INSTRUCTIONS" in prompt
+        assert "cloudwatch, datadog, github, gitlab" in prompt
+
+    def test_build_prompt_entries_labeled(self) -> None:
+        logs = self._make_logs("cloudwatch", entries=[
+            {"@timestamp": "2026-03-06T10:00:00Z", "@message": "NPE in handler",
+             "log_level": "ERROR", "occurrences": 1},
+        ])
+        deploys = self._make_deploys("github", entries=[
+            {"sha": "abc1234def5678", "author": "sarah",
+             "timestamp": "2026-03-06T09:55:00Z",
+             "message": "fix payment", "diffs": [
+                 {"new_path": "PaymentService.java", "diff": "+null check"}]},
+        ])
+        prompt = build_user_prompt([logs, deploys])
+        assert "[2026-03-06T10:00:00Z] [ERROR] NPE in handler" in prompt
+        assert "abc1234d" in prompt
+        assert "@sarah" in prompt
+        assert "PaymentService.java" in prompt
+
+    def test_build_prompt_truncation_note(self) -> None:
+        prompt = build_user_prompt([self._make_logs("cloudwatch", truncated=True)])
+        assert "\u26a0 Data was truncated" in prompt
+
+    def test_build_prompt_occurrences(self) -> None:
+        logs = self._make_logs("cloudwatch", entries=[
+            {"@timestamp": "2026-03-06T10:00:00Z", "@message": "NPE",
+             "occurrences": 5},
+        ])
+        prompt = build_user_prompt([logs])
+        assert "(\u00d75)" in prompt
 
 
 class TestDiagnoseErrors:

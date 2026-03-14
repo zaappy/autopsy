@@ -58,7 +58,7 @@ pip install -e ".[dev]"
 ```bash
 autopsy           # Launch interactive TUI (menu, then run Diagnose or Setup)
 autopsy init      # Or: interactive config wizard (~/.autopsy/config.yaml)
-autopsy diagnose  # Or: run diagnosis directly (CloudWatch, optional Datadog + GitHub/GitLab → AI → panels)
+autopsy diagnose  # Collect (parallel) → AI prompt (labeled by source) → panels / --json (includes `sources`)
 ```
 
 **Interactive TUI** — Run `autopsy` with no arguments to open the interactive terminal UI:
@@ -129,6 +129,7 @@ autopsy config validate   # Check env vars and connectivity
 | `autopsy diagnose --log-group /aws/lambda/foo` | Override log groups (repeatable) |
 | `autopsy diagnose --provider openai` | Use OpenAI instead of Anthropic |
 | `autopsy diagnose --sequential` | Run collectors sequentially instead of in parallel (debugging) |
+| `autopsy diagnose --source cloudwatch` | Run only listed collector(s); repeatable (`--source cloudwatch --source github`) |
 | `autopsy history list` | List saved diagnoses (newest first) |
 | `autopsy history show <id>` | Show a saved diagnosis (supports short ID prefix) |
 | `autopsy history show <id> --postmortem` | Generate post-mortem from saved diagnosis |

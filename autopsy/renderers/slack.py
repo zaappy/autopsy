@@ -75,6 +75,28 @@ class SlackRenderer:
                 "text": {"type": "plain_text", "text": "🚨 AUTOPSY — Incident Diagnosis"},
             },
             {"type": "divider"},
+        ]
+
+        log_n = sum(1 for s in result.sources if s.data_type == "logs")
+        dep_n = sum(1 for s in result.sources if s.data_type == "deploys")
+        if log_n > 1 or dep_n > 1:
+            source_parts: list[str] = []
+            for s in result.sources:
+                label = "entries" if s.data_type == "logs" else "commits"
+                source_parts.append(f"{s.name.title()} ({s.entry_count} {label})")
+            blocks.append(
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"*Sources:* {' + '.join(source_parts)}",
+                        }
+                    ],
+                }
+            )
+
+        blocks.append(
             {
                 "type": "section",
                 "text": {
@@ -84,15 +106,17 @@ class SlackRenderer:
                         f"{rc.summary}"
                     ),
                 },
-            },
+            }
+        )
+        blocks.append(
             {
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
                     "text": evidence_text,
                 },
-            },
-        ]
+            }
+        )
 
         # Correlated Deploy (only if present)
         if deploy and deploy.commit_sha:

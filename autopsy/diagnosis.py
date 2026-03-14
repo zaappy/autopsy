@@ -24,8 +24,9 @@ from autopsy.collectors.gitlab import GitLabCollector
 from autopsy.config import AutopsyConfig  # noqa: TC001 — used at runtime for __init__
 
 if TYPE_CHECKING:
-    from autopsy.ai.models import DiagnosisResult
     from autopsy.collectors.base import BaseCollector, CollectedData
+
+from autopsy.ai.models import DiagnosisResult, SourceInfo
 
 logger = logging.getLogger(__name__)
 console = Console(stderr=True)
@@ -54,8 +55,15 @@ class DiagnosisOrchestrator:
     # Collector discovery
     # ------------------------------------------------------------------
 
-    def _get_collectors(self) -> list[BaseCollector]:
-        """Instantiate collectors based on config."""
+    def _get_collectors(
+        self, source_filter: tuple[str, ...] | None = None
+    ) -> list[BaseCollector]:
+        """Instantiate collectors based on config.
+
+        Args:
+            source_filter: If provided, only collectors whose role is in
+                this tuple are returned.  An empty tuple means "all".
+        """
         collectors: list[BaseCollector] = []
         if self.config.aws:
             cw = CloudWatchCollector()
@@ -72,6 +80,26 @@ class DiagnosisOrchestrator:
             gl = GitLabCollector()
             gl._autopsy_role = "gitlab"
             collectors.append(gl)
+
+        if source_filter:
+            all_roles = [getattr(c, "_autopsy_role", "") for c in collectors]
+            filtered = [
+                c
+                for c in collectors
+                if getattr(c, "_autopsy_role", "") in source_filter
+            ]
+            if not filtered:
+                from autopsy.utils.errors import ConfigError
+
+                raise ConfigError(
+                    message=(
+                        f"Source(s) {', '.join(repr(s) for s in source_filter)} "
+                        f"not configured"
+                    ),
+                    hint=f"Available sources: {', '.join(all_roles)}",
+                )
+            collectors = filtered
+
         return collectors
 
     # ------------------------------------------------------------------
@@ -82,6 +110,7 @@ class DiagnosisOrchestrator:
         self,
         aws_dict: dict,
         datadog_dict: dict | None,
+        source_filter: tuple[str, ...] | None = None,
     ) -> list[_CollectorTask]:
         """Build the list of collector tasks with resolved configs.
 
@@ -90,7 +119,7 @@ class DiagnosisOrchestrator:
         sequential and parallel paths share the same behaviour.
         """
         tasks: list[_CollectorTask] = []
-        for collector in self._get_collectors():
+        for collector in self._get_collectors(source_filter):
             role = getattr(collector, "_autopsy_role", "")
             if role == "cloudwatch":
                 tasks.append(_CollectorTask(collector, aws_dict, role))
@@ -317,6 +346,7 @@ class DiagnosisOrchestrator:
         log_groups: list[str] | None = None,
         provider: str | None = None,
         sequential: bool = False,
+        source_filter: tuple[str, ...] | None = None,
     ) -> DiagnosisResult:
         """Execute the full diagnosis pipeline.
 
@@ -325,6 +355,8 @@ class DiagnosisOrchestrator:
             log_groups: Override config log groups (replaces list).
             provider: Override AI provider ('anthropic' | 'openai').
             sequential: Force sequential collection (for debugging).
+            source_filter: If set, only use collectors whose role matches
+                one of the given names (e.g. ``("cloudwatch", "github")``).
 
         Returns:
             Structured DiagnosisResult from the AI engine.
@@ -372,7 +404,9 @@ class DiagnosisOrchestrator:
             )
 
         # Build collector tasks (skip-logic lives here)
-        tasks = self._resolve_collector_tasks(aws_dict, datadog_dict)
+        tasks = self._resolve_collector_tasks(
+            aws_dict, datadog_dict, source_filter=source_filter
+        )
 
         # Collect — parallel by default, sequential on request
         mode = "sequentially" if sequential else "in parallel"
@@ -437,6 +471,14 @@ class DiagnosisOrchestrator:
             temperature=self.config.ai.temperature,
         )
         result = engine.diagnose(collected)
+        result.sources = [
+            SourceInfo(
+                name=d.source,
+                data_type=d.data_type,
+                entry_count=len(d.entries),
+            )
+            for d in collected
+        ]
         duration_s = time.monotonic() - start
 
         # Best-effort history save: never block diagnosis output

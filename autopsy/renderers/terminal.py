@@ -64,6 +64,11 @@ class TerminalRenderer(BaseRenderer):
         Args:
             result: Structured diagnosis from the AI engine.
         """
+        # Sources panel (only when >1 source)
+        sources_panel = self._render_sources_panel(result)
+        if sources_panel is not None:
+            console.print(sources_panel)
+
         # Panel 1: Root Cause — summary, category tag, confidence bar, evidence bullets
         rc = result.root_cause
         conf_style = _confidence_style(rc.confidence)
@@ -162,6 +167,40 @@ class TerminalRenderer(BaseRenderer):
                 )
             )
 
+    @staticmethod
+    def _render_sources_panel(result: DiagnosisResult) -> Panel | None:
+        """Render a sources summary panel when multi-source redundancy exists.
+
+        One log + one deploy (classic CloudWatch + GitHub) stays unchanged
+        from pre-multi-source terminal output. Panel shows when there are
+        multiple log sources and/or multiple deploy sources.
+        """
+        log_sources = [s for s in result.sources if s.data_type == "logs"]
+        deploy_sources = [s for s in result.sources if s.data_type == "deploys"]
+        if len(log_sources) <= 1 and len(deploy_sources) <= 1:
+            return None
+
+        lines: list[str] = []
+        if log_sources:
+            parts = [
+                f"\U0001f4cb {s.name.title()} ({s.entry_count} entries)"
+                for s in log_sources
+            ]
+            lines.append("  ".join(parts))
+        if deploy_sources:
+            parts = [
+                f"\U0001f680 {s.name.title()} ({s.entry_count} commits)"
+                for s in deploy_sources
+            ]
+            lines.append("  ".join(parts))
+
+        return Panel(
+            "\n".join(lines),
+            title="SOURCES",
+            border_style="dim",
+            padding=(0, 1),
+        )
+
     def get_renderables(self, result: DiagnosisResult) -> list[RenderableType]:
         """Return the same panels as Rich renderables (for TUI embedding).
 
@@ -172,6 +211,9 @@ class TerminalRenderer(BaseRenderer):
             List of Rich renderables (Panels, Table in Panel) in display order.
         """
         out: list[RenderableType] = []
+        sources_panel = self._render_sources_panel(result)
+        if sources_panel is not None:
+            out.append(sources_panel)
         rc = result.root_cause
         conf_style = _confidence_style(rc.confidence)
         cat_style = _category_style(rc.category)
