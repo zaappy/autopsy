@@ -17,6 +17,7 @@ from autopsy.ai.engine import AIEngine
 from autopsy.collectors.cloudwatch import CloudWatchCollector
 from autopsy.collectors.datadog import DatadogCollector
 from autopsy.collectors.github import GitHubCollector
+from autopsy.collectors.gitlab import GitLabCollector
 from autopsy.config import AutopsyConfig  # noqa: TC001 — used at runtime for __init__
 
 if TYPE_CHECKING:
@@ -51,6 +52,10 @@ class DiagnosisOrchestrator:
         gh = GitHubCollector()
         gh._autopsy_role = "github"
         collectors.append(gh)
+        if getattr(self.config, "gitlab", None) is not None:
+            gl = GitLabCollector()
+            gl._autopsy_role = "gitlab"
+            collectors.append(gl)
         return collectors
 
     def run(
@@ -133,6 +138,18 @@ class DiagnosisOrchestrator:
                     )
                     continue
                 cfg = datadog_dict
+            elif role == "gitlab":
+                gitlab_cfg = getattr(self.config, "gitlab", None)
+                if gitlab_cfg is None:
+                    continue
+                token_env = gitlab_cfg.token_env
+                if not os.environ.get(token_env, "").strip():
+                    console.print(
+                        f"[yellow]⚠ GitLab token ({token_env}) not set — "
+                        f"skipping GitLab.[/yellow]"
+                    )
+                    continue
+                cfg = gitlab_cfg.model_dump()
             else:  # github
                 cfg = self.config.github.model_dump()
             collector.validate_config(cfg)

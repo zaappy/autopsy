@@ -90,6 +90,24 @@ class GitHubConfig(BaseModel):
         return v
 
 
+class GitLabConfig(BaseModel):
+    """GitLab-specific configuration (optional)."""
+
+    url: str = "https://gitlab.com"
+    token_env: str = "GITLAB_TOKEN"
+    project_id: str = Field(description="Numeric ID or 'namespace/project' path")
+    branch: str = "main"
+    deploy_count: int = Field(default=5, ge=1, le=50)
+
+    @field_validator("url")
+    @classmethod
+    def _check_url(cls, v: str) -> str:
+        if not v.startswith("http"):
+            msg = f"GitLab URL must start with http:// or https://: '{v}'"
+            raise ValueError(msg)
+        return v.rstrip("/")
+
+
 class DatadogConfig(BaseModel):
     """Datadog-specific configuration (optional)."""
 
@@ -156,6 +174,7 @@ class AutopsyConfig(BaseModel):
     aws: AWSConfig
     datadog: DatadogConfig | None = None
     github: GitHubConfig
+    gitlab: GitLabConfig | None = None
     ai: AIConfig = Field(default_factory=AIConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     slack: SlackConfig | None = None
@@ -261,11 +280,18 @@ def validate_config(config: AutopsyConfig) -> dict[str, dict]:
         slack_status["channel"] = slack_cfg.channel or "unknown"
         slack_status["source"] = _src(slack_env, slack_val) if slack_val else "not set"
 
+    gitlab_status: dict[str, object] = {"configured": False, "source": "not set"}
+    if config.gitlab is not None:
+        gl_val = os.environ.get(config.gitlab.token_env, "")
+        gitlab_status["configured"] = bool(gl_val)
+        gitlab_status["source"] = _src(config.gitlab.token_env, gl_val) if gl_val else "not set"
+
     return {
         "github_token": {
             "set": bool(gh_val),
             "source": _src(config.github.token_env, gh_val),
         },
+        "gitlab_token": gitlab_status,
         "anthropic_key": {
             "set": bool(anth_val),
             "source": _src(config.ai.anthropic_api_key_env, anth_val),
@@ -510,6 +536,39 @@ def init_wizard(config_path: Path | None = None) -> Path:
             hint="Re-run 'autopsy init' and double-check your inputs.",
         ) from exc
 
+    # GitLab (optional)
+    console.print("\n[bold cyan]GitLab Configuration (Optional)[/bold cyan]")
+    add_gitlab = Prompt.ask("Add GitLab repo? [y/N]", default="N").strip().lower() == "y"
+
+    gitlab_cfg: GitLabConfig | None = None
+    if add_gitlab:
+        gl_url = Prompt.ask("GitLab URL", default="https://gitlab.com").strip()
+        gl_project = Prompt.ask(
+            "Project ID or path (e.g., 12345 or myteam/myapp)",
+            default="",
+        ).strip()
+        if not gl_project:
+            console.print("[yellow]⚠ Project ID is required. Skipping GitLab.[/yellow]")
+            add_gitlab = False
+        else:
+            gl_branch = Prompt.ask("Branch to track", default="main").strip()
+            gl_deploy_count = int(Prompt.ask("Recent deploys to analyze", default="5"))
+            try:
+                gitlab_cfg = GitLabConfig(
+                    url=gl_url,
+                    project_id=gl_project,
+                    branch=gl_branch,
+                    deploy_count=gl_deploy_count,
+                )
+            except ValidationError as exc:
+                errors = "; ".join(
+                    f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
+                )
+                raise ConfigValidationError(
+                    message=f"Invalid GitLab configuration: {errors}",
+                    hint="Re-run 'autopsy init' and double-check your GitLab inputs.",
+                ) from exc
+
     # Log sources (CloudWatch already configured, Datadog optional)
     console.print("\n[bold cyan]📋 Log Sources[/bold cyan]")
     console.print(
@@ -712,6 +771,38 @@ def init_wizard(config_path: Path | None = None) -> Path:
                 hint="Check your Datadog API and App keys and try again.",
             )
 
+    # GitLab token (optional)
+    if gitlab_cfg is not None:
+        console.print(
+            "\n[bold cyan]GitLab Token[/bold cyan]\n"
+            "  Stored locally in ~/.autopsy/.env and never leaves your machine.\n"
+        )
+        for _attempt in range(3):
+            gl_token = Prompt.ask(
+                "GitLab Token (glpat-...)(⚠ctrl+shift+v to paste)",
+                default="",
+                password=True,
+            ).strip()
+            if not gl_token:
+                console.print(
+                    "[yellow]⚠ GitLab token is required. Please enter a valid token.[/yellow]"
+                )
+                continue
+            ok, reason = _validate_gitlab_token(gl_token, gitlab_cfg.url, gitlab_cfg.project_id)
+            if ok:
+                env_entries["GITLAB_TOKEN"] = gl_token
+                console.print("[green]✔ Verified[/green]")
+                break
+            console.print(f"[red]✘ {reason}. Try again.[/red]")
+        else:
+            raise ConfigValidationError(
+                message="GitLab token validation failed after 3 attempts.",
+                hint=(
+                    f"Generate a token at {gitlab_cfg.url}/-/user_settings/personal_access_tokens "
+                    "with 'read_api' scope."
+                ),
+            )
+
     # AWS — just check, don't ask
     aws_status = _check_aws_credentials(aws_cfg)
     if aws_status["found"]:
@@ -734,6 +825,7 @@ def init_wizard(config_path: Path | None = None) -> Path:
             deploy_count=deploy_count,
             branch=branch,
         ),
+        gitlab=gitlab_cfg,
         ai=AIConfig(
             provider=provider,
             model=model,
@@ -863,6 +955,28 @@ def init_slack_only(
 # ---------------------------------------------------------------------------
 
 
+def _validate_gitlab_token(token: str, url: str, project_id: str) -> tuple[bool, str]:
+    """Validate GitLab token. Returns (ok, reason) where reason describes any failure."""
+    if not token:
+        return False, "token is empty"
+    try:
+        import gitlab as gl_module
+
+        gl = gl_module.Gitlab(url, private_token=token)
+        gl.auth()
+        try:
+            gl.projects.get(project_id)
+            return True, ""
+        except gl_module.exceptions.GitlabGetError as e:
+            return False, f"project '{project_id}' not found ({e})"
+        except gl_module.exceptions.GitlabError as e:
+            return False, f"GitLab error: {e}"
+    except gl_module.exceptions.GitlabAuthenticationError:
+        return False, "token is invalid or expired"
+    except Exception as e:
+        return False, str(e)
+
+
 def _render_config_summary(config: AutopsyConfig) -> None:
     """Print a Rich summary of the config (for init wizard confirmation)."""
     lines = [
@@ -872,6 +986,13 @@ def _render_config_summary(config: AutopsyConfig) -> None:
         f"[bold]GitHub[/bold]  repo={config.github.repo}  "
         f"branch={config.github.branch}  "
         f"deploys={config.github.deploy_count}",
-        f"[bold]AI[/bold]  provider={config.ai.provider}  model={config.ai.model}",
     ]
+    if config.gitlab is not None:
+        lines.append(
+            f"[bold]GitLab[/bold]  url={config.gitlab.url}  "
+            f"project={config.gitlab.project_id}  "
+            f"branch={config.gitlab.branch}  "
+            f"deploys={config.gitlab.deploy_count}"
+        )
+    lines.append(f"[bold]AI[/bold]  provider={config.ai.provider}  model={config.ai.model}")
     console.print(Panel("\n".join(lines), title="Configuration Summary", border_style="green"))

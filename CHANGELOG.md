@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- GitLab collector: optional integration with GitLab API via `python-gitlab`; pulls commits, diffs, merge requests, and deployment events; supports self-hosted GitLab URLs; smart diff reduction matching GitHub collector; `GITLAB_TOKEN` via env; skips with warning when token is missing; can coexist with GitHub collector.
+- Init wizard can add optional GitLab config (URL, project ID, branch, deploy count) and write `GITLAB_TOKEN` to `~/.autopsy/.env`.
+- `autopsy config validate` checks GitLab when configured.
+- AI prompts label deploy entries by source (`[Github]` / `[Gitlab]`) for multi-source correlation.
 - Datadog log collector: optional integration with Datadog Logs API (validate + search); supports us1/eu1/us3/us5/ap1; API/App keys via env; skips with warning when keys are missing.
 - Shared log reduction pipeline (dedup, truncation, token budget) used by CloudWatch and Datadog.
 - Init wizard can add optional Datadog config (site, service, source) and write `DD_API_KEY` / `DD_APP_KEY` to `~/.autopsy/.env`.

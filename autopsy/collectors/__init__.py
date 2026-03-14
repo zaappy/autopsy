@@ -1,1 +1,1 @@
-"""Autopsy data collectors — CloudWatch, GitHub, and future integrations."""
+"""Autopsy data collectors — CloudWatch, GitHub, GitLab, and future integrations."""

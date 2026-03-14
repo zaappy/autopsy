@@ -135,8 +135,9 @@ def _format_deploys_section(deploy_data: list[CollectedData]) -> str:
     lines: list[str] = ["=== RECENT DEPLOYS ==="]
     for cd in deploy_data:
         start, end = cd.time_range
+        source_label = cd.source.capitalize()
         lines.append(
-            f"Source: {cd.source} | "
+            f"Source: [{source_label}] | "
             f"Window: {start.isoformat()} → {end.isoformat()} | "
             f"Commits: {cd.entry_count}"
         )
