@@ -368,6 +368,7 @@ class TestJSONRenderer:
         assert '"root_cause"' in out
         assert '"summary"' in out
         assert '"correlated_deploy"' in out
+        assert "confidence_level" in out
         assert "\n  " in out
 
     def test_json_output_includes_sources(
